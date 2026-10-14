@@ -180,7 +180,7 @@ def _bind_rows(draft_id: int, bookings: list[Booking]) -> list:
     ]
 
 
-def _card(draft: MessageDraft, result_reason: str = "", booking_label: str = "") -> str:
+def _card(draft: MessageDraft, result_reason: str = "", booking_label: str = "", *, identified: bool = False) -> str:
     cls = {"typical": "типовой", "money": "деньги", "conflict": "конфликт", "other": "нестандарт"}.get(
         draft.question_class, draft.question_class
     )
@@ -192,6 +192,10 @@ def _card(draft: MessageDraft, result_reason: str = "", booking_label: str = "")
         f"Класс: {cls} · политика: {draft.policy_mode}"
         + (" · модель" if (draft.matched_faq or "").startswith("LLM") else " · FAQ"),
         f"Бронь: {booking_label}" if booking_label else "Бронь: не привязана — выберите, кто пишет.",
+    ]
+    if identified:
+        lines.append("Гость опознан по коду и привязан к этой брони.")
+    lines += [
         "",
         "Черновик:",
         draft.draft_text,
@@ -660,7 +664,7 @@ async def _handle_guest_text(
         draft = session.get(MessageDraft, draft_id)
         if not draft:
             return
-        card = _card(draft, result.reason, result.booking_label)
+        card = _card(draft, result.reason, result.booking_label, identified=result.bound_by_code)
         bind = [] if result.booking_id else _bind_rows(draft.id, upcoming_for_link(session, draft.property_id))
         markup = (
             _keyboard(draft.id, bind, issue_code_booking=result.booking_id if result.issue_code else None)

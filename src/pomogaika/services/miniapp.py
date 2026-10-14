@@ -20,7 +20,7 @@ from pomogaika.services.stay import (
     platform_blocks_in_groups,
     readiness,
 )
-from pomogaika.models import Block, Booking, BookingConflict, Listing, MessageDraft, Property, Task
+from pomogaika.models import Block, Booking, BookingConflict, GuestLink, Listing, MessageDraft, Property, Task
 from pomogaika.services.bookings import describe_conflict
 
 PLAT_TITLE = {
@@ -68,7 +68,8 @@ def properties_for(session: Session, *, owner_id: int | None = None, property_id
 
 def _booking_card(booking: Booking, *, conflict_ids: set[int], today: date,
                   sources: list[dict] | None = None, drafts: list | None = None,
-                  tasks: list | None = None, merged_ids: list[int] | None = None) -> dict:
+                  tasks: list | None = None, merged_ids: list[int] | None = None,
+                  guest_since: datetime | None = None) -> dict:
     """Карточка брони в том виде, в каком её рисует шахматка и список броней."""
     nights = len(_nights(booking.check_in, booking.check_out))
     amount = round(booking.amount_cents / 100)
@@ -107,6 +108,9 @@ def _booking_card(booking: Booking, *, conflict_ids: set[int], today: date,
         "stage": stage,
         "conflict": booking.id in conflict_ids,
         "code_hint": booking.code_hint,
+        "guest_phone": booking.guest_phone or "",
+        "guest_telegram_user_id": booking.guest_telegram_user_id,
+        "guest_since": guest_since.isoformat() if guest_since else None,
         # откуда знаем про эту занятость: площадки, которые её показывают
         "sources": src,
         "merged_ids": merged_ids or [booking.id],
@@ -116,6 +120,22 @@ def _booking_card(booking: Booking, *, conflict_ids: set[int], today: date,
         "paid_amount": paid_amount,
         "left_amount": amount - paid_amount,
     }
+
+
+def _guest_since(session: Session, booking_ids: list[int]) -> dict[int, datetime]:
+    if not booking_ids:
+        return {}
+    rows = (
+        session.query(GuestLink)
+        .filter(GuestLink.booking_id.in_(booking_ids), GuestLink.used_at.isnot(None))
+        .all()
+    )
+    found: dict[int, datetime] = {}
+    for row in rows:
+        prev = found.get(row.booking_id)
+        if row.used_at and (prev is None or row.used_at < prev):
+            found[row.booking_id] = row.used_at
+    return found
 
 
 def build_miniapp(
@@ -309,6 +329,7 @@ def build_miniapp(
     leaving = [_stay(b, kind="out") for b in bookings if b.check_out.date() == today]
 
     conflict_ids = {c.booking_a_id for c in conflicts} | {c.booking_b_id for c in conflicts}
+    guest_since = _guest_since(session, [b.id for b in bookings])
     groups = merge_occupancy(bookings, blocks)
     used_blocks = platform_blocks_in_groups(groups)
     cards = [
@@ -320,6 +341,7 @@ def build_miniapp(
             drafts=drafts,
             tasks=tasks,
             merged_ids=[m.id for m in group.members],
+            guest_since=guest_since.get(group.lead.id),
         )
         for group in groups
     ]

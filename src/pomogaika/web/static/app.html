@@ -638,10 +638,10 @@ async function api(url, body) {
     throw new Error("Откройте приложение заново через бота в Telegram");
   }
   if (!res.ok) {
-    // причина с сервера важнее кода: «письмо не отправлено: …» человеку понятнее, чем 502
-    let why = "";
-    try { const e = await res.json(); why = (e && e.detail) || ""; } catch (_) { why = ""; }
-    throw new Error(why || "HTTP " + res.status);
+    // причина с сервера важнее кода: «письмо не отправлено: …» понятнее, чем 502
+    let detail = "";
+    try { const body = await res.json(); detail = body.detail || ""; } catch (e) { detail = ""; }
+    throw new Error(typeof detail === "string" && detail ? detail : ("HTTP " + res.status));
   }
   return res.json();
 }
@@ -999,6 +999,8 @@ function openBooking(id) {
     <div class="fact"><div class="k">Объект</div>
       <div class="v">${esc(objectOf(b.property_id).title)}<br><span class="sub">${esc(objectOf(b.property_id).address)}</span></div></div>
     <div class="fact"><div class="k">Гостей</div><div class="v">${b.guests}</div></div>
+    ${b.guest_phone ? `<div class="fact"><div class="k">Телефон</div><div class="v"><a href="tel:${esc(b.guest_phone)}">${esc(b.guest_phone)}</a></div></div>` : ""}
+    ${b.guest_telegram_user_id ? `<div class="fact"><div class="k">Telegram</div><div class="v">Гость в Telegram${b.guest_since ? " с " + dmy(b.guest_since).slice(0, 5) : ""}</div></div>` : `<button class="btn" id="b-link">Ссылка для гостя</button>`}
     ${conflictNote}
     ${b.paid ? "" : `<button class="btn solid" id="b-paid">Отметить оплату</button>`}
     <button class="btn" id="b-code">Выдать код калитки</button>
@@ -1006,6 +1008,8 @@ function openBooking(id) {
     <button class="btn" id="b-outcome">Итог проживания</button>
     <button class="btn ghost" data-close>Закрыть</button>`);
   $("b-outcome").onclick = () => openOutcome(id);
+  const linkBtn = $("b-link");
+  if (linkBtn) linkBtn.onclick = () => openGuestLink(id);
   const paid = $("b-paid");
   if (paid) paid.onclick = async () => { await api(`/api/bookings/${id}/paid`, {}); haptic("ok"); closeAll(); await load(true); toast("Оплата отмечена"); };
   $("b-code").onclick = async () => {
@@ -1018,6 +1022,50 @@ function openBooking(id) {
   $("b-out").onclick = async () => {
     try { const res = await api(`/api/bookings/${id}/checkout`, {}); haptic("ok"); closeAll(); await load(true); toast(res.task ? "Задача клинеру поставлена" : "Выезд отмечен"); }
     catch (e) { toast("Ошибка: " + e.message); }
+  };
+}
+
+async function openGuestLink(id) {
+  let res;
+  try {
+    res = await api(`/api/bookings/${id}/guest-link`, {});
+  } catch (e) {
+    haptic("error");
+    toast(e.message || "Не удалось сделать ссылку");
+    return;
+  }
+  const pack = res.message + "\n\n" + res.url;
+  haptic("ok");
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>Ссылка для гостя</h3><div class="sub">до ${esc(dmy(res.expires_at))}</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    <div class="fact"><div class="k">Ссылка</div><div class="v" style="word-break:break-all">${esc(res.url)}</div></div>
+    <div class="fact"><div class="k">Текст для гостя</div><div class="v">${esc(res.message)}</div></div>
+    <button class="btn solid" id="gl-copy">Скопировать текст и ссылку</button>
+    <button class="btn danger" id="gl-revoke">Отозвать ссылку</button>
+    <button class="btn ghost" data-close>Закрыть</button>`);
+  $("gl-copy").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(pack);
+      haptic("ok");
+      toast("Скопировано");
+    } catch (e) {
+      haptic("error");
+      toast("Не удалось скопировать");
+    }
+  };
+  $("gl-revoke").onclick = async () => {
+    try {
+      await api(`/api/bookings/${id}/guest-link/revoke`, {});
+      haptic("ok");
+      closeAll();
+      toast("Ссылка отозвана");
+    } catch (e) {
+      haptic("error");
+      toast(e.message || "Не удалось отозвать");
+    }
   };
 }
 

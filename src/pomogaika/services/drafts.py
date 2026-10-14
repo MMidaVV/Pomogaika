@@ -4,6 +4,7 @@ from pomogaika.db import SessionLocal
 from pomogaika.models import MessageDraft, Property
 from pomogaika.services.copilot import CopilotResult, classify_and_draft
 from pomogaika.services.guest import bind_guest, match_booking
+from pomogaika.services.guest_links import resolve_code
 from pomogaika.services.seed import audit, emit
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,9 @@ def create_guest_draft(
     booking_id: int | None = None,
 ) -> tuple[MessageDraft, CopilotResult]:
     prop = session.query(Property).one()
+    linked = resolve_code(session, text, guest_user_id)
+    if linked is not None:
+        booking_id = linked.id
     booking = match_booking(
         session,
         prop.id,
@@ -29,6 +33,8 @@ def create_guest_draft(
     if booking:
         bind_guest(booking, guest_user_id, guest_chat_id, business_connection_id)
     result = classify_and_draft(text, booking)
+    if linked is not None and booking is not None and booking.id == linked.id:
+        result.bound_by_code = True
     draft = MessageDraft(
         property_id=prop.id,
         guest_text=text,

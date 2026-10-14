@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     faq_path: Path = ROOT / "ops" / "kava" / "faq.yaml"
     telegram_bot_token: str = ""
     telegram_owner_user_id: int | None = None
+    # Username собственницы для ссылки гостю в личку, без @. Не имя бота.
+    telegram_owner_username: str = ""
+    # Номера поддержки площадок и свой номер: в гостевой телефон их не пишем.
+    guest_phone_blocklist: str = ""
     telegram_cleaner_user_id: int | None = None
     cleaner_escalate_minutes: int = 10
     tokenrouter_api_key: str = ""

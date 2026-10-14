@@ -44,6 +44,7 @@ def migrate_sqlite() -> None:
     add("booking_conflicts", "block_id", "INTEGER")
     add("bookings", "guest_chat_id", "VARCHAR(64) DEFAULT ''")
     add("bookings", "business_connection_id", "VARCHAR(128) DEFAULT ''")
+    add("bookings", "guest_phone", "VARCHAR(20) DEFAULT ''")
     add("bookings", "code_hint", "VARCHAR(8) DEFAULT ''")
     add("bookings", "code_issued_at", "DATETIME")
     add("bookings", "code_window_notified", "BOOLEAN DEFAULT 0")

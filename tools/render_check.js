@@ -57,7 +57,7 @@ global.setTimeout = (fn) => 0;
 global.clearTimeout = () => {};
 
 const sandbox = { module: { exports: {} } };
-const wrapped = script + "\n;module.exports = { renderGrid, renderBook, renderDrawer, bookingCard, setData: (d) => { D = d; } };";
+const wrapped = script + "\n;module.exports = { renderGrid, renderBook, renderDrawer, bookingCard, openBooking, setData: (d) => { D = d; } };";
 
 let api;
 try {
@@ -73,6 +73,7 @@ const checks = [
   ["renderBook", () => api.renderBook()],
   ["renderDrawer", () => api.renderDrawer()],
   ["bookingCard", () => api.bookingCard(data.bookings[0])],
+  ["openBooking", () => api.openBooking(data.bookings[0].id)],
 ];
 let failed = 0;
 for (const [name, fn] of checks) {

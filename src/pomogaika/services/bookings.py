@@ -18,6 +18,7 @@ from pomogaika.domain.dates import fmt_span
 from pomogaika.domain.policy import check
 from pomogaika.models import Block, Booking, BookingConflict, Listing, Property
 from pomogaika.platforms.ical import parse_ics
+from pomogaika.services.phones import keep_guest_phone
 from pomogaika.services.seed import audit, emit
 
 ACTIVE = {"pending", "confirmed", "paid", "staying"}
@@ -100,6 +101,7 @@ def ingest_booking(
     status: str = "confirmed",
     source: str = "email",
     listing_id: int | None = None,
+    guest_phone: str = "",
 ) -> IngestResult:
     if status == "cancelled":
         found = _existing(session, property_id, platform, external_id)
@@ -137,6 +139,10 @@ def ingest_booking(
     booking.amount_cents = amount_cents or booking.amount_cents
     booking.paid = paid or booking.paid
     booking.status = status
+    # пустой номер и номер из списка-исключения не затирают уже известный
+    phone = keep_guest_phone(guest_phone)
+    if phone:
+        booking.guest_phone = phone
     booking.source = source
     if created:
         session.add(booking)
