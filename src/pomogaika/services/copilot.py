@@ -43,6 +43,7 @@ class CopilotResult:
     booking_label: str = ""
     issue_code: bool = False
     source: str = "faq"
+    bound_by_code: bool = False
 
 
 def load_faq() -> list[dict]:

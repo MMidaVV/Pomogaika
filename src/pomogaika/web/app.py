@@ -20,6 +20,7 @@ from pomogaika.models import AuditLog, Block, Booking, BookingConflict, Event, L
 from pomogaika.platforms.email_parser import parse_platform_email
 from pomogaika.platforms.ical import fetch_ics
 from pomogaika.services.llm import enabled as llm_enabled
+from pomogaika.services.guest_links import GUEST_PITCH, active_link, issue_link, revoke
 from pomogaika.services.bookings import (
     blocks_in_range,
     close_dates,
@@ -633,6 +634,35 @@ def mark_paid(booking_id: int, session: Session = Depends(get_session)) -> dict:
         booking.status = "confirmed"
     audit(session, "booking.paid", f"Оплата {booking.guest_name}", "owner", "owner", "confirm")
     return {"ok": True, "booking": _booking_dict(booking)}
+
+
+@app.post("/api/bookings/{booking_id}/guest-link")
+def guest_link_api(booking_id: int, session: Session = Depends(get_session)) -> dict:
+    booking = session.get(Booking, booking_id)
+    if not booking:
+        raise HTTPException(404)
+    try:
+        url = issue_link(session, booking)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    row = active_link(session, booking.id)
+    return {
+        "url": url,
+        "code": row.id if row else "",
+        "expires_at": row.expires_at.isoformat() if row else "",
+        "message": GUEST_PITCH,
+    }
+
+
+@app.post("/api/bookings/{booking_id}/guest-link/revoke")
+def revoke_guest_link(booking_id: int, session: Session = Depends(get_session)) -> dict:
+    booking = session.get(Booking, booking_id)
+    if not booking:
+        raise HTTPException(404)
+    row = active_link(session, booking.id)
+    if row:
+        revoke(session, row.id)
+    return {"ok": True}
 
 
 class TaskIn(BaseModel):

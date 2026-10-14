@@ -1492,3 +1492,174 @@ YA-0388-2035-3750:0
 Подтверждено"""
     p = parse_yandex(text, year_hint=2026)
     assert p.amount_cents == 3324000       # берём то, что заплатил гость
+
+
+# --- ссылка гостя в личку собственницы и телефон из письма ---
+
+def _guest_code(session, booking, monkeypatch):
+    from pomogaika.config import settings
+    from pomogaika.services.guest_links import active_link, issue_link
+
+    monkeypatch.setattr(settings, "telegram_owner_username", "galina")
+    issue_link(session, booking)
+    return active_link(session, booking.id)
+
+
+def test_guest_code_resolves_booking_and_sets_used_at(_prop, _db, monkeypatch):
+    from pomogaika.services.guest_links import resolve_code
+
+    start = datetime.now() + timedelta(days=10)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-1",
+        check_in=start, check_out=start + timedelta(days=3),
+    )
+    row = _guest_code(_db, booking, monkeypatch)
+    found = resolve_code(_db, f"Здравствуйте! Бронь {row.id}", 501)
+    assert found.id == booking.id
+    assert row.used_at is not None
+    assert row.guest_user_id == 501
+
+
+def test_expired_and_revoked_guest_codes_do_not_resolve(_prop, _db, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from pomogaika.services.drafts import create_guest_draft
+    from pomogaika.services.guest_links import resolve_code, revoke
+
+    start = datetime.now() + timedelta(days=10)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-2",
+        check_in=start, check_out=start + timedelta(days=3),
+    )
+    row = _guest_code(_db, booking, monkeypatch)
+    text = f"Здравствуйте! Бронь {row.id}"
+
+    row.expires_at = datetime.now() - timedelta(minutes=1)
+    _db.flush()
+    assert resolve_code(_db, text, 501) is None
+
+    row.expires_at = booking.check_out + timedelta(days=1)
+    _db.flush()
+    revoke(_db, row.id)
+    assert resolve_code(_db, text, 501) is None
+    assert resolve_code(_db, "Здравствуйте! Бронь TEST-ffff", 501) is None
+
+    draft, result = create_guest_draft(
+        _db, "Здравствуйте! Бронь TEST-ffff",
+        guest_user_id="501", guest_chat_id="77", business_connection_id="bc-x",
+    )
+    assert result.bound_by_code is False
+    assert draft.booking_id is None
+    low = draft.draft_text.lower()
+    assert "истекла" not in low
+    assert "не найдена" not in low
+
+
+def test_guest_code_is_one_person(_prop, _db, monkeypatch):
+    from pomogaika.services.guest_links import resolve_code
+
+    start = datetime.now() + timedelta(days=10)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-3",
+        check_in=start, check_out=start + timedelta(days=3),
+    )
+    row = _guest_code(_db, booking, monkeypatch)
+    text = f"Здравствуйте! Бронь {row.id}"
+    assert resolve_code(_db, text, 501).id == booking.id
+    assert resolve_code(_db, text, 502) is None
+    assert resolve_code(_db, text, 501).id == booking.id
+    assert row.guest_user_id == 501
+
+
+def test_guest_link_endpoint_reuses_code(_prop, _db, monkeypatch):
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    from pomogaika.models import GuestLink
+    from pomogaika.web.app import guest_link_api
+
+    start = datetime.now() + timedelta(days=10)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-4", guest_name="Евгения",
+        check_in=start, check_out=start + timedelta(days=3),
+    )
+    _guest_code(_db, booking, monkeypatch)
+    first = guest_link_api(booking.id, _db)
+    second = guest_link_api(booking.id, _db)
+    assert first["code"] == second["code"]
+    assert _db.query(GuestLink).count() == 1
+    text = unquote(parse_qs(urlparse(first["url"]).query)["text"][0])
+    assert text == f"Здравствуйте! Бронь {first['code']}"
+    assert "бот" not in first["message"].lower()
+    assert first["url"].startswith("https://t.me/galina?text=")
+
+
+def test_business_message_with_code_binds_draft(_prop, _db, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from pomogaika.services.drafts import create_guest_draft
+
+    later = datetime.now() + timedelta(days=30)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-5", paid=False,
+        check_in=later, check_out=later + timedelta(days=2),
+    )
+    row = _guest_code(_db, booking, monkeypatch)
+    draft, result = create_guest_draft(
+        _db,
+        f"Здравствуйте! Бронь {row.id}. Пришлите код калитки",
+        guest_chat_id="4242",
+        guest_user_id="77",
+        business_connection_id="bc-77",
+        channel="telegram_business",
+    )
+    assert draft.business_connection_id == "bc-77"
+    assert draft.booking_id == booking.id
+    assert booking.guest_telegram_user_id == 77
+    assert booking.guest_chat_id == "4242"
+    assert booking.business_connection_id == "bc-77"
+    assert result.bound_by_code is True
+    assert result.issue_code is False
+
+
+def test_sutochno_phone_saved_blocklist_skipped(_prop, _db, monkeypatch):
+    from pomogaika.config import settings
+    from pomogaika.platforms.letters import parse_sutochno
+    from pomogaika.services.bookings import ingest_booking
+
+    monkeypatch.setattr(settings, "guest_phone_blocklist", "+7 495 123-45-67")
+    parsed = parse_sutochno(SUTOCHNO_LETTER, year_hint=2026)
+    assert parsed.phone == "+79166080113"
+    saved = ingest_booking(
+        _db, property_id=_prop.id, platform=parsed.platform, external_id=parsed.external_id,
+        guest_name=parsed.guest_name, check_in=parsed.check_in, check_out=parsed.check_out,
+        guests_count=parsed.guests_count, amount_cents=parsed.amount_cents, paid=parsed.paid,
+        guest_phone=parsed.phone,
+    )
+    assert saved.booking.guest_phone == "+79166080113"
+
+    blocked = ingest_booking(
+        _db, property_id=_prop.id, platform="ostrovok", external_id="listing-phone",
+        guest_name="Гость", check_in=parsed.check_in, check_out=parsed.check_out,
+        guest_phone="+7 (495) 123-45-67",
+    )
+    assert blocked.booking.guest_phone == ""
+
+    with_hotline = SUTOCHNO_LETTER.replace(
+        "+7 916 608 01 13", "+7 800 555-35-35\n+7 916 608 01 13",
+    )
+    assert parse_sutochno(with_hotline, year_hint=2026).phone == "+79166080113"
+
+
+def test_empty_phone_does_not_erase_saved(_prop, _db):
+    from pomogaika.platforms.letters import parse_sutochno
+    from pomogaika.services.bookings import ingest_booking
+
+    parsed = parse_sutochno(SUTOCHNO_LETTER, year_hint=2026)
+    common = dict(
+        property_id=_prop.id, platform=parsed.platform, external_id=parsed.external_id,
+        guest_name=parsed.guest_name, check_in=parsed.check_in, check_out=parsed.check_out,
+    )
+    first = ingest_booking(_db, guest_phone=parsed.phone, **common)
+    second = ingest_booking(_db, guest_phone="", **common)
+    assert second.booking.id == first.booking.id
+    assert second.booking.guest_phone == "+79166080113"

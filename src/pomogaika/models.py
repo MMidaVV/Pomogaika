@@ -71,6 +71,7 @@ class Booking(Base):
     guest_telegram_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     guest_chat_id: Mapped[str] = mapped_column(String(64), default="")
     business_connection_id: Mapped[str] = mapped_column(String(128), default="")
+    guest_phone: Mapped[str] = mapped_column(String(20), default="")
     code_hint: Mapped[str] = mapped_column(String(8), default="")
     code_issued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     code_window_notified: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -206,6 +207,24 @@ class AccessUser(Base):
     name: Mapped[str] = mapped_column(String(200), default="")
     added_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class GuestLink(Base):
+    """Код в тексте, с которым гость пишет в личку собственницы.
+
+    В ссылке нет номера брони: только читаемый код вроде KAVA-7f3a.
+    Один код — один Telegram-аккаунт. После выезда плюс сутки код не действует.
+    """
+
+    __tablename__ = "guest_links"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id"), index=True)
+    property_id: Mapped[int] = mapped_column(ForeignKey("properties.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    guest_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Invite(Base):

@@ -59,6 +59,7 @@ def poll(session: Session, limit: int = 20, *, unseen_only: bool = True) -> dict
             paid=parsed.paid,
             status=status,
             source="email",
+            guest_phone=getattr(parsed, "phone", "") or "",
         )
         created += 1 if result.created else 0
         updated += 0 if result.created else 1

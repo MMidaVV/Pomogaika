@@ -181,7 +181,7 @@ def parse_sutochno(text: str, *, year_hint: int) -> LetterBooking | None:
     if people:
         guests = int(people.group(1))
 
-    phone = PHONE.search(joined)
+    phone = _guest_phone(joined)
     guest = _name_near_phone(lines)
 
     # «отменена» встречается в дежурных фразах вроде «иначе она будет отменена»,
@@ -199,8 +199,15 @@ def parse_sutochno(text: str, *, year_hint: int) -> LetterBooking | None:
         amount_cents=total or prepaid,
         paid=prepaid > 0 and "внес предоплату" in joined.casefold(),
         kind="cancelled" if cancelled else ("request" if requested else "created"),
-        phone=phone.group(0).strip() if phone else "",
+        phone=phone,
     )
+
+
+def _guest_phone(text: str) -> str:
+    """Первый номер гостя. 8-800 и номера из списка-исключения пропускаются."""
+    from pomogaika.services.phones import first_guest_phone
+
+    return first_guest_phone(text)
 
 
 def _name_near_phone(lines: list[str]) -> str:
