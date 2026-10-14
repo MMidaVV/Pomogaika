@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pomogaika — вход</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #11161d; color: #e8edf5; padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 380px; background: #171e27; border: 1px solid #232c38;
+    border-radius: 16px; padding: 32px 28px; text-align: center;
+  }
+  h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; }
+  .sub { margin: 0 0 24px; color: #8b97a8; font-size: 14px; }
+  .widget { min-height: 48px; display: grid; place-items: center; }
+  .note { margin: 22px 0 0; color: #6f7c8d; font-size: 13px; line-height: 1.5; }
+  .err { margin: 0 0 20px; padding: 10px 14px; border-radius: 10px; font-size: 14px;
+         background: #3a1d20; border: 1px solid #5c2b30; color: #f0b5ba; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Pomogaika</h1>
+    <p class="sub">KaVa — апартаменты у моря</p>
+    <div id="err"></div>
+    <div class="widget" id="widget"></div>
+    <p class="note">Вход по вашему аккаунту Telegram. Пускает собственника и тех, кого он пригласил.
+      Нет доступа — попросите у собственника ссылку-приглашение: в боте команда /доступ.
+      На телефоне удобнее открыть мини-приложение прямо в боте.</p>
+  </div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const reason = params.get("err");
+  if (reason) {
+    document.getElementById("err").innerHTML =
+      '<div class="err">' + (reason === "denied"
+        ? "Этот аккаунт Telegram не в списке допущенных. Попросите у собственника ссылку-приглашение — в боте команда /доступ."
+        : "Вход не подтвердился. Попробуйте ещё раз.") + "</div>";
+  }
+  const s = document.createElement("script");
+  s.async = true;
+  s.src = "https://telegram.org/js/telegram-widget.js?22";
+  s.setAttribute("data-telegram-login", "__BOT_USERNAME__");
+  s.setAttribute("data-size", "large");
+  s.setAttribute("data-radius", "10");
+  s.setAttribute("data-auth-url", location.origin + "/auth/telegram");
+  s.setAttribute("data-request-access", "write");
+  document.getElementById("widget").appendChild(s);
+</script>
+</body>
+</html>

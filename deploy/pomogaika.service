@@ -1,0 +1,27 @@
+[Unit]
+Description=Pomogaika (FastAPI + Telegram bot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pomogaika
+Group=pomogaika
+WorkingDirectory=/opt/pomogaika
+Environment=PYTHONPATH=/opt/pomogaika/src
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/pomogaika/.venv/bin/python -m uvicorn pomogaika.web.app:app --host 127.0.0.1 --port 8001 --workers 1
+Restart=always
+RestartSec=5
+# aiogram не всегда отпускает polling по SIGTERM — не ждём его полторы минуты
+TimeoutStopSec=20
+KillMode=mixed
+
+# один процесс: внутри крутится long-polling Telegram и SQLite
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

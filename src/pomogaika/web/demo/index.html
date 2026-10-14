@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pomogaika — KaVa, Зеленоградск</title>
+  <style>
+    :root {
+      --bg: #12171c;
+      --bg2: #1a2128;
+      --line: #2a343e;
+      --sand: #c9a36a;
+      --sea: #4d9a94;
+      --text: #e8e0d4;
+      --muted: #9aa3ad;
+      --danger: #c45c4a;
+      --ok: #6ea87a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+      font: 15px/1.45 "Segoe UI", system-ui, sans-serif; }
+    a { color: var(--sand); }
+    header {
+      display: flex; align-items: baseline; gap: 16px;
+      padding: 18px 24px; border-bottom: 1px solid var(--line);
+    }
+    header h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 500; font-size: 22px; margin: 0; letter-spacing: .04em; }
+    header h1 span { color: var(--sand); }
+    header p { margin: 0; color: var(--muted); font-size: 13px; }
+    .script {
+      margin: 12px 24px 0; padding: 12px 14px; background: var(--bg2); border: 1px solid var(--line);
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
+    .script b { color: var(--sand); font-weight: 600; margin-right: 8px; }
+    .script button, .chip {
+      background: transparent; border: 1px solid var(--line); color: var(--text);
+      padding: 6px 10px; border-radius: 999px; cursor: pointer; font-size: 13px;
+    }
+    .script button:hover, .chip:hover { border-color: var(--sand); color: var(--sand); }
+    main { display: grid; grid-template-columns: 280px 1fr 360px; gap: 0; height: calc(100vh - 120px); }
+    aside, section, .chat { padding: 18px 20px; overflow: auto; }
+    aside { border-right: 1px solid var(--line); }
+    .chat { border-left: 1px solid var(--line); background: #151c22; }
+    h2 { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+    .card { background: var(--bg2); border: 1px solid var(--line); padding: 12px; margin-bottom: 10px; }
+    .plat { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .plat:last-child { border-bottom: 0; }
+    .plat .row { margin-top: 6px; }
+    .plat input { width: 100%; min-height: auto; margin-top: 6px; font-size: 12px; }
+    .plat:last-child { border-bottom: 0; }
+    .tag { font-size: 11px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+    .tag.money { color: var(--danger); border-color: var(--danger); }
+    .tag.typical { color: var(--sea); border-color: var(--sea); }
+    .tag.conflict, .tag.open { color: var(--sand); border-color: var(--sand); }
+    .tag.never { color: var(--danger); }
+    .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .cal div { min-height: 54px; border: 1px solid var(--line); padding: 4px; font-size: 11px; background: #161d23; }
+    .cal .d { color: var(--muted); }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; }
+    .avito { background: #6ea87a; } .sutochno { background: #c9a36a; } .yandex { background: #d0c15a; } .ostrovok { background: #4d9a94; }
+    textarea, input {
+      width: 100%; background: #10161b; color: var(--text); border: 1px solid var(--line);
+      padding: 10px; font: inherit; resize: vertical; min-height: 72px;
+    }
+    .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    button.primary { background: var(--sand); color: #1a140c; border: 0; padding: 8px 12px; cursor: pointer; font-weight: 600; }
+    button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); padding: 8px 12px; cursor: pointer; }
+    button.danger { background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 8px 12px; cursor: pointer; }
+    .bubble { max-width: 92%; padding: 8px 10px; margin: 8px 0; font-size: 14px; }
+    .guest { background: #24303a; border-radius: 12px 12px 12px 4px; }
+    .bot { background: #2a3a34; border-radius: 12px 12px 4px 12px; margin-left: auto; }
+    .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .alert { border-left: 3px solid var(--sand); padding-left: 10px; }
+    ul.plain { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+    .log { font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); padding: 6px 0; }
+    @media (max-width: 1100px) {
+      main { grid-template-columns: 1fr; height: auto; }
+      .chat, aside { border: 0; border-top: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Pomogaika · <span>KaVa</span></h1>
+    <p>Зеленоградск, Гагарина 87 кв. 19 · копайлот, не автопилот · <span id="llm-flag">модель выкл</span>
+      · <a href="/app">мини-приложение</a></p>
+  </header>
+  <div class="script">
+    <b>Показ за 3 минуты</b>
+    <button type="button" data-fill="Где парковка и как заехать на машине?">1. Парковка</button>
+    <button type="button" data-fill="Можно скидку 20% если на три ночи?">2. Скидка — человек</button>
+    <button type="button" data-fill="Код от калитки не подходит, мы стоим на улице">3. Калитка ночью</button>
+    <button type="button" id="paste-mail">4. Письмо Суточно → конфликт</button>
+    <button type="button" id="do-checkout">5. Выезд → клинер</button>
+    <button type="button" id="do-close">6. Закрой даты</button>
+    <button type="button" id="paste-ics">7. iCal</button>
+    <button type="button" id="ask-darya">8. Дарья, код рано</button>
+    <button type="button" id="issue-code">9. Выдать код Михаилу</button>
+    <button type="button" id="do-know">10. База: парковка</button>
+    <button type="button" data-fill="Можно ли оставить тачку у дома на ночь?">11. Парафраз → LLM</button>
+    <button type="button" data-fill="Есть ли капсульная кофемашина и утюг?">12. Нет в FAQ → сама</button>
+  </div>
+  <main>
+    <aside>
+      <h2>Объект</h2>
+      <div class="card" id="prop"></div>
+      <h2>Площадки</h2>
+      <div class="card" id="plats"></div>
+      <h2>Открытый конфликт</h2>
+      <div class="card alert" id="conflict">Нет</div>
+      <h2>Задачи клинеру</h2>
+      <div id="tasks"></div>
+    </aside>
+    <section>
+      <h2>Календарь · одно ядро, четыре витрины</h2>
+      <div class="cal" id="cal"></div>
+      <p class="meta" style="margin:8px 0 16px">
+        <span class="dot avito"></span>Авито
+        <span class="dot sutochno"></span>Суточно
+        <span class="dot yandex"></span>Яндекс
+        <span class="dot ostrovok"></span>Островок
+        · заезд и выезд в один день — не конфликт
+        · серое — блок собственника
+      </p>
+      <h2>Закрыть даты</h2>
+      <input id="close-text" value="закрой 28–30 сентября" style="min-height:auto" />
+      <div class="row">
+        <button class="primary" id="make-block">Закрыть в календаре</button>
+      </div>
+      <div id="block-out"></div>
+      <h2>База знаний</h2>
+      <input id="know-text" value="парковка: Бесплатная открытая за территорией, карта на шлагбаум по запросу." style="min-height:auto" />
+      <div class="row">
+        <button class="ghost" id="save-know">Сохранить в базу</button>
+      </div>
+      <div id="know-out"></div>
+      <h2>Выдать код (ручной контур)</h2>
+      <input id="code-text" placeholder="Коды из замка — в репозиторий не пишутся" style="min-height:auto" />
+      <div class="row">
+        <button class="ghost" id="send-code">Отправить гостю по политике</button>
+      </div>
+      <div id="code-out"></div>
+      <h2>Письмо площадки</h2>
+      <textarea id="mail">У вас новый запрос на бронь №42919999
+Бронь №42919999 | Объект №2323816
+Зеленоградск, Гагарина улица, 87
+Гость: К.
+Число гостей: 2
+Даты: 22.09.2026 — 26.09.2026
+Сумма: 16 000 ₽
+</textarea>
+      <div class="row">
+        <button class="primary" id="ingest">Разобрать письмо и закрыть даты</button>
+      </div>
+      <div id="mail-out"></div>
+      <h2 style="margin-top:22px">iCal площадки</h2>
+      <p class="meta">Ссылку экспорта календаря вставляйте слева, в блоке «Площадки». Сюда — сам файл .ics, если ссылки нет.</p>
+      <textarea id="ics" style="min-height:88px">BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:ical-demo-1
+SUMMARY:Гость iCal
+DTSTART:20260928T140000
+DTEND:20260930T120000
+END:VEVENT
+END:VCALENDAR</textarea>
+      <div class="row">
+        <button class="ghost" id="ingest-ics">Загрузить iCal</button>
+      </div>
+      <div id="ics-out"></div>
+      <h2 style="margin-top:22px">Журнал действий (неизменяемый)</h2>
+      <div id="journal"></div>
+    </section>
+    <div class="chat">
+      <h2>Гость пишет · черновик вам</h2>
+      <label class="meta">От имени брони</label>
+      <select id="as-guest" style="width:100%;margin-bottom:8px;background:#10161b;color:var(--text);border:1px solid var(--line);padding:8px;"></select>
+      <div id="thread"></div>
+      <textarea id="guest" placeholder="Вопрос гостя…"></textarea>
+      <div class="row">
+        <button class="primary" id="ask">Подготовить ответ</button>
+      </div>
+      <div id="draft-box"></div>
+    </div>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let data = null;
+    const platforms = { avito: "Авито", sutochno: "Суточно", yandex: "Яндекс", ostrovok: "Островок" };
+
+    function fmt(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    }
+    function rub(cents) { return (cents / 100).toLocaleString("ru-RU") + " ₽"; }
+
+    async function load() {
+      data = await (await fetch("/api/overview")).json();
+      render();
+    }
+
+    function render() {
+      const llm = data.llm || {};
+      $("llm-flag").textContent = llm.enabled ? ("модель " + (llm.model || "TokenRouter")) : "модель выкл, FAQ";
+      const k = data.property.knowledge;
+      $("prop").innerHTML = `<b>${data.property.title}</b><div class="meta">${data.property.address}</div>
+        <div class="meta">заезд ${data.property.check_in_from} · выезд ${data.property.check_out_until} · до ${data.property.max_guests} гостей</div>
+        <div class="meta">режим: ${data.property.mode} · море ${k.sea_m} м</div>`;
+      $("plats").innerHTML = data.listings.map(l =>
+        `<div class="plat">
+          <div><span>${platforms[l.platform] || l.platform}</span> · <a href="${l.url}" target="_blank">объявление</a></div>
+          <input data-ical="${l.platform}" placeholder="URL календаря .ics с площадки" value="${(l.ical_url || "").replace(/"/g, "&quot;")}" />
+        </div>`
+      ).join("") + `<div class="row" style="margin-top:8px">
+          <button class="ghost" type="button" id="save-icals">Сохранить ссылки</button>
+          <button class="primary" type="button" id="sync-icals">Забрать брони</button>
+        </div><div id="ical-out" class="meta"></div>`;
+      const saveIcals = $("save-icals");
+      const syncIcals = $("sync-icals");
+      if (saveIcals) saveIcals.onclick = persistIcals;
+      if (syncIcals) syncIcals.onclick = pullIcals;
+      if (data.conflicts.length) {
+        const c = data.conflicts[0];
+        if (c.block) {
+          $("conflict").innerHTML = `<b>Бронь × закрытые даты</b>
+            <div class="meta">${c.a ? c.a.guest_name : ""} пересекается с ${fmt(c.block.start)} — ${fmt(c.block.end)}</div>
+            <div class="row">
+              <button class="danger" onclick="resolveConflict(${c.id},'cancel',${c.a ? c.a.id : c.cheaper_id})">Снять бронь у нас</button>
+              <button class="ghost" onclick="resolveConflict(${c.id},'dismiss')">Оставить</button>
+            </div>`;
+        } else {
+          $("conflict").innerHTML = `<b>Пересечение</b>
+            <div class="meta">${c.a.guest_name} (${platforms[c.a.platform]}) ${fmt(c.a.check_in)} — ${fmt(c.a.check_out)} · ${rub(c.a.amount_cents)}</div>
+            <div class="meta">${c.b.guest_name} (${platforms[c.b.platform]}) ${fmt(c.b.check_in)} — ${fmt(c.b.check_out)} · ${rub(c.b.amount_cents)}</div>
+            <div style="margin-top:8px">Дешевле снять в календаре: <b>${c.cheaper}</b> (${platforms[c.cheaper_platform] || ""}). Отмену на площадке делает человек.</div>
+            <div class="row">
+              <button class="danger" onclick="resolveConflict(${c.id},'cancel',${c.cheaper_id})">Снять дешёвую у нас</button>
+              <button class="ghost" onclick="resolveConflict(${c.id},'cancel',${c.b.id})">Снять вторую</button>
+              <button class="ghost" onclick="resolveConflict(${c.id},'dismiss')">Разберусь на площадках</button>
+            </div>`;
+        }
+      } else $("conflict").textContent = "Пересечений нет";
+      $("tasks").innerHTML = data.tasks.map(t =>
+        `<div class="card"><span class="tag">${t.state}</span> ${t.title}
+          <div class="meta">${t.assignee} · фото ${t.photo_count || 0}/${t.photos_needed || 6}</div>
+          <div class="row">
+            <button class="ghost" onclick="taskAct(${t.id},'accept')">Принять</button>
+            <button class="ghost" onclick="taskAct(${t.id},'photo')">+фото</button>
+            <button class="ghost" onclick="taskAct(${t.id},'snooze')">Перенос</button>
+            <button class="primary" onclick="taskAct(${t.id},'done')">Готово</button>
+          </div>
+        </div>`
+      ).join("") || "<div class='meta'>Пока нет</div>";
+      $("journal").innerHTML = data.journal.map(j =>
+        `<div class="log">${j.action} · ${j.policy_decision || "—"} · ${j.reason}</div>`
+      ).join("");
+      renderCal();
+      renderThread();
+      const sel = $("as-guest");
+      const prev = sel.value;
+      sel.innerHTML = `<option value="">Авто: по тексту / кто в квартире</option>` +
+        data.bookings.filter(b => b.status !== "cancelled").map(b =>
+          `<option value="${b.id}">${b.guest_name} · ${platforms[b.platform] || b.platform} · ${fmt(b.check_in).slice(0,6)}</option>`
+        ).join("");
+      if (prev) sel.value = prev;
+      const darya = data.bookings.find(b => b.guest_name === "Дарья");
+      if (darya && !$("mail").dataset.ready) {
+        const start = new Date(darya.check_in);
+        start.setDate(start.getDate() + 1);
+        const end = new Date(darya.check_out);
+        end.setDate(end.getDate() + 2);
+        const f = (x) => String(x.getDate()).padStart(2,"0") + "." + String(x.getMonth()+1).padStart(2,"0") + "." + x.getFullYear();
+        $("mail").value = $("mail").value.replace(/Даты:.*\n/, `Даты: ${f(start)} — ${f(end)}\n`);
+        $("mail").dataset.ready = "1";
+      }
+    }
+
+    function renderCal() {
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth();
+      const first = new Date(y, m, 1);
+      const start = (first.getDay() + 6) % 7;
+      const days = new Date(y, m + 1, 0).getDate();
+      const cells = [];
+      for (let i = 0; i < start; i++) cells.push("<div></div>");
+      for (let d = 1; d <= days; d++) {
+        const day = new Date(y, m, d);
+        const hits = data.bookings.filter(b => {
+          if (b.status === "cancelled") return false;
+          const a = new Date(b.check_in), c = new Date(b.check_out);
+          return day >= new Date(a.getFullYear(), a.getMonth(), a.getDate())
+            && day < new Date(c.getFullYear(), c.getMonth(), c.getDate());
+        });
+        const blocked = (data.blocks || []).filter(b => {
+          const a = new Date(b.start), c = new Date(b.end);
+          return day >= new Date(a.getFullYear(), a.getMonth(), a.getDate())
+            && day < new Date(c.getFullYear(), c.getMonth(), c.getDate());
+        });
+        const busyRe = /забронир|закрыт|closed|booked|busy|blocked|reserved|avito \(|гость ical|^гость$/i;
+        const named = hits.filter(h => !busyRe.test(h.guest_name || ""));
+        let labels = "";
+        if (named.length) {
+          labels = named.map(h => `<div><span class="dot ${h.platform}"></span>${h.guest_name}</div>`).join("");
+        } else if (hits.length) {
+          const plats = [...new Set(hits.map(h => h.platform))];
+          labels = `<div>${plats.map(p => `<span class="dot ${p}"></span>`).join("")} занято</div>`;
+        }
+        cells.push(`<div><div class="d">${d}</div>${labels}
+          ${blocked.map(() => `<div class="meta">блок</div>`).join("")}</div>`);
+      }
+      $("cal").innerHTML = cells.join("");
+    }
+
+    function renderThread() {
+      const pending = data.drafts.filter(d => d.status === "pending_owner");
+      const rest = data.drafts.slice(0, 6);
+      $("thread").innerHTML = rest.map(d =>
+        `<div class="bubble guest">${d.guest_text}<div class="meta">${d.question_class} · политика ${d.policy_mode}${d.matched_faq ? " · " + d.matched_faq : ""}</div></div>
+         <div class="bubble bot">${d.draft_text}<div class="meta">${d.status === "pending_owner" ? "ждёт вас" : d.status}${d.booking_id ? " · бронь #" + d.booking_id : ""}</div></div>`
+      ).join("");
+      const d = pending[0];
+      if (!d) { $("draft-box").innerHTML = ""; return; }
+      const fromLlm = (d.matched_faq || "").startsWith("LLM");
+      $("draft-box").innerHTML = `<div class="card" style="margin-top:12px">
+        <div><span class="tag ${d.question_class}">${d.question_class}</span>
+             <span class="tag ${d.policy_mode}">${d.policy_mode}</span>
+             <span class="tag">${fromLlm ? "черновик модели" : "готовый FAQ"}</span></div>
+        <p>${d.draft_text}</p>
+        <div class="meta">${d.matched_faq || ""}</div>
+        <div class="row">
+          <button class="primary" onclick="act(${d.id},'send')">Отправить</button>
+          <button class="ghost" onclick="act(${d.id},'edit')">Поправить</button>
+          <button class="danger" onclick="act(${d.id},'self')">Ответить самой</button>
+        </div>
+      </div>`;
+    }
+
+    async function act(id, action) {
+      let text = null;
+      if (action === "edit") {
+        text = prompt("Исправленный ответ", data.drafts.find(x => x.id === id).draft_text);
+        if (text == null) return;
+      }
+      await fetch("/api/drafts/" + id, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, text })
+      });
+      await load();
+    }
+
+    $("ask").onclick = async () => {
+      const text = $("guest").value.trim();
+      if (!text) return;
+      await fetch("/api/copilot", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, booking_id: $("as-guest").value ? Number($("as-guest").value) : null })
+      });
+      $("guest").value = "";
+      await load();
+    };
+
+    async function persistIcals() {
+      const rows = [...document.querySelectorAll("[data-ical]")];
+      for (const input of rows) {
+        await fetch("/api/listings/ical", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ platform: input.dataset.ical, url: input.value.trim() })
+        });
+      }
+      const out = $("ical-out");
+      if (out) out.textContent = "Ссылки сохранила";
+      await load();
+    }
+    async function pullIcals() {
+      await persistIcals();
+      const res = await (await fetch("/api/ical/sync", { method: "POST" })).json();
+      const out = $("ical-out");
+      if (out) {
+        const parts = (res.listings || []).map(x => x.ok ? `${x.platform}: ${x.count}` : `${x.platform}: ${x.error}`);
+        out.textContent = parts.length ? parts.join(" · ") : "Нет сохранённых ссылок";
+      }
+      await load();
+    }
+
+    $("ingest").onclick = async () => {
+      const res = await (await fetch("/api/email", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: $("mail").value })
+      })).json();
+      $("mail-out").innerHTML = `<div class="card" style="margin-top:8px">
+        Площадка: <b>${res.parsed.platform}</b> · ${res.parsed.kind}
+        ${res.conflicts && res.conflicts.length
+          ? "<div class='meta'>Конфликт с уже стоящей бронью. Отмену бот не делает.</div>"
+          : "<div class='meta'>Пересечения нет, даты можно закрывать.</div>"}
+      </div>`;
+      await load();
+    };
+
+    document.querySelectorAll("[data-fill]").forEach(btn => {
+      btn.onclick = () => { $("guest").value = btn.dataset.fill; $("ask").click(); };
+    });
+    $("paste-mail").onclick = () => {
+      const darya = data.bookings.find(b => b.guest_name === "Дарья") || data.bookings[1];
+      const start = new Date(darya.check_in);
+      start.setDate(start.getDate() + 1);
+      const end = new Date(darya.check_out);
+      end.setDate(end.getDate() + 2);
+      const f = (x) => String(x.getDate()).padStart(2,"0") + "." + String(x.getMonth()+1).padStart(2,"0") + "." + x.getFullYear();
+      $("mail").value = `У вас новый запрос на бронь №42919999
+Бронь №42919999 | Объект №2323816
+Зеленоградск, Гагарина улица, 87
+Гость: К.
+Число гостей: 2
+Даты: ${f(start)} — ${f(end)}
+Сумма: 16 000 ₽
+`;
+      $("ingest").click();
+    };
+    $("do-checkout").onclick = async () => {
+      const stay = data.bookings.find(b => b.status === "staying") || data.bookings[0];
+      await fetch("/api/bookings/" + stay.id + "/checkout", { method: "POST" });
+      await load();
+    };
+    $("make-block").onclick = async () => {
+      const res = await (await fetch("/api/blocks", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: $("close-text").value })
+      })).json();
+      $("block-out").innerHTML = `<div class="card" style="margin-top:8px">${res.ok ? "Даты закрыты" : (res.detail || "ошибка")}</div>`;
+      await load();
+    };
+    $("do-close").onclick = () => { $("make-block").click(); };
+    $("ingest-ics").onclick = async () => {
+      const res = await (await fetch("/api/ical", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: $("ics").value })
+      })).json();
+      $("ics-out").innerHTML = `<div class="card" style="margin-top:8px">Событий: ${res.count}. Конфликтов: ${(res.conflicts||[]).length}. Отмену бот не делает.</div>`;
+      await load();
+    };
+    $("paste-ics").onclick = () => {
+      const darya = data.bookings.find(b => b.guest_name === "Дарья") || data.bookings[1];
+      const start = new Date(darya.check_in);
+      start.setDate(start.getDate() + 1);
+      const end = new Date(darya.check_out);
+      end.setDate(end.getDate() + 2);
+      const ics = (x) => x.getFullYear() + String(x.getMonth()+1).padStart(2,"0") + String(x.getDate()).padStart(2,"0");
+      $("ics").value = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:ical-overlap-demo
+SUMMARY:Гость iCal
+DTSTART:${ics(start)}T140000
+DTEND:${ics(end)}T120000
+END:VEVENT
+END:VCALENDAR`;
+      $("ingest-ics").click();
+    };
+    $("ask-darya").onclick = () => {
+      const darya = data.bookings.find(b => b.guest_name === "Дарья");
+      if (darya) $("as-guest").value = String(darya.id);
+      $("guest").value = "Я Дарья, заезжаем, какой код от калитки?";
+      $("ask").click();
+    };
+    $("save-know").onclick = async () => {
+      const res = await (await fetch("/api/knowledge", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: $("know-text").value })
+      })).json();
+      $("know-out").innerHTML = `<div class="card" style="margin-top:8px">${res.note || res.detail || ""}</div>`;
+      await load();
+    };
+    $("do-know").onclick = () => $("save-know").click();
+    $("send-code").onclick = async () => {
+      const stay = data.bookings.find(b => b.status === "staying") || data.bookings[0];
+      const text = $("code-text").value.trim();
+      if (!text) { $("code-out").innerHTML = "<div class='card'>Вставьте коды из замка — бот их не генерирует.</div>"; return; }
+      const res = await (await fetch("/api/bookings/" + stay.id + "/code", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+      })).json();
+      $("code-out").innerHTML = `<div class="card" style="margin-top:8px">${res.ok ? "Отправлено, в журнале хвост **" + res.hint : (res.reason || "нельзя")}</div>`;
+      await load();
+    };
+    $("issue-code").onclick = () => {
+      const stay = data.bookings.find(b => b.status === "staying") || data.bookings.find(b => b.guest_name === "Михаил");
+      if (stay) $("as-guest").value = String(stay.id);
+      $("code-text").focus();
+    };
+    async function taskAct(id, action) {
+      let note = "";
+      if (action === "snooze") note = prompt("Когда будете?", "буду через час") || "";
+      if (action === "done") note = prompt("Что мешало?", "ничего") || "";
+      await fetch("/api/tasks/" + id, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, note })
+      });
+      await load();
+    }
+    async function resolveConflict(id, action, booking_id) {
+      await fetch("/api/conflicts/" + id, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, booking_id: booking_id || null })
+      });
+      await load();
+    }
+    load();
+  </script>
+</body>
+</html>

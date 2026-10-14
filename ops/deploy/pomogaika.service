@@ -1,0 +1,26 @@
+[Unit]
+Description=Pomogaika — ИИ-диспетчер посуточной аренды
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pomogaika
+Group=pomogaika
+WorkingDirectory=/opt/pomogaika
+# .env читает само приложение (pydantic-settings), из /opt/pomogaika/.env
+Environment=PYTHONPATH=/opt/pomogaika/src
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/pomogaika/.venv/bin/python -m uvicorn pomogaika.web.app:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+# наружу приложение не слушает — только nginx через localhost
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ReadWritePaths=/opt/pomogaika/data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+id: kava
+title: KaVa — апартаменты у моря
+city: Зеленоградск
+address: ул. Гагарина, 87, кв. 19
+entrance: "1 подъезд, 3 этаж из 6, лифт"
+max_guests: 4
+area_m2: 47
+beds: "широкая двуспальная + диван-кровать"
+check_in_from: "14:00"
+check_out_until: "12:00"
+timezone: Europe/Kaliningrad
+sea_m: 120
+pets: true
+smoking: false
+parties: false
+children: true
+deposit_rub: 5000
+parking: "Бесплатная открытая парковка за территорией. Карта на шлагбаум — по запросу. Такси через шлагбаум — написать Галине, откроет или позвонит в охрану."
+wifi: "Wi-Fi есть. Имя сети и пароль выдаём только оплаченной брони в окне заезда."
+access: "Бесконтактный заезд: код калитки с торца дома, временный код домофона подъезда (только калитка/подъезд, в квартире домофона нет), ключ в сейфе у двери. Коды одноразовые, в чат — не раньше чем за 2 часа до заезда и только после оплаты."
+host: "Галина, администратор, на связи круглосуточно."
+notes:
+  - Полотенца в шкафу в прихожей можно брать на пляж, там же пластиковые бокалы и набор для пикника.
+  - Кондиционер: включить и поставить 22.
+  - На стиральной машине гель для всех типов белья, наливать на глаз, сильно не пенится.
+  - Трансфер из Храброво по запросу при заезде. Обратный в аэропорт — платный, ориентир 2000 ₽.
+  - Залог 5000 ₽, возвращаем после уборки.
+  - В ЖК бывают работы и стройка утром — не обещать полную тишину с 8:00.
+platforms:
+  avito: "https://www.avito.ru/zelenogradsk/kvartiry/1-k._kvartira_47_m_2_krovati_8044426045"
+  ostrovok: "https://ostrovok.ru/hotel/russia/zelenogradsk/mid13926838/kava_pryamo_na_promenade_baltika_za_oknom_pitomtsy_welcome_flat/"
+  sutochno: "https://sutochno.ru/front/searchapp/detail/2323816"
+  yandex: "https://travel.yandex.ru/hotels/zelenogradsk/kava-apartamenty-u-moria-zelenogradsk/"
+ical:
+  avito: ""
+  sutochno: ""
+  ostrovok: ""
+  yandex: ""
