@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from pomogaika.config import settings
+
 DEFAULTS: dict[str, str] = {
     "typical_reply": "confirm",
     "door_code": "confirm",
@@ -35,6 +37,12 @@ class Decision:
 def check(action: str, context: dict | None = None) -> Decision:
     context = context or {}
     mode = DEFAULTS.get(action, "confirm")
+
+    # COPILOT_AUTOSEND — временный режим «отвечает сама»: обычные вопросы уходят
+    # гостю без кнопки собственника. Деньги, возвраты, отмены, жалобы и коды
+    # от двери остаются человеку независимо от этого переключателя.
+    if settings.copilot_autosend and action == "typical_reply":
+        mode = "auto"
     if context.get("property_mode") == "copilot_locked" and action == "typical_reply":
         mode = "confirm"
         return Decision(mode, action, "УК: ответы гостю всегда с подтверждением", True)
@@ -57,7 +65,9 @@ def check(action: str, context: dict | None = None) -> Decision:
 
     allowed = mode != "never"
     reasons = {
-        "typical_reply": "Типовой ответ — копайлот, ждём кнопку собственника",
+        "typical_reply": ("Типовой ответ ушёл сам — включён COPILOT_AUTOSEND"
+                          if settings.copilot_autosend else
+                          "Типовой ответ — копайлот, ждём кнопку собственника"),
         "close_dates": "Закрытие дат на других площадках — всегда авто",
         "cleaner_task": "Задача клинеру после выезда — всегда авто",
         "extra_people": "Жалоба или лишние люди — подтверждение",

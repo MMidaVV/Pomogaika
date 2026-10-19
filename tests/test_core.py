@@ -2028,3 +2028,41 @@ def test_same_message_twice_gets_one_answer(tmp_path, monkeypatch):
 
     assert first.id == second.id
     assert session.query(MessageDraft).count() == before + 1
+
+
+# ---------- временный режим «отвечает сама» ----------
+
+def test_autosend_flips_only_ordinary_questions(monkeypatch):
+    from pomogaika.domain.policy import check
+    import pomogaika.domain.policy as policy
+
+    monkeypatch.setattr(policy.settings, "copilot_autosend", True)
+    assert check("typical_reply").mode == "auto"          # обычный вопрос уходит сам
+    assert check("refund").mode == "never"                # деньги и возвраты — человеку
+    assert check("cancel").mode == "never"
+    assert check("extra_people").mode == "confirm"        # жалобы — человеку
+    paid_now = {"paid": True, "now": datetime(2026, 10, 22, 13, 0),
+                "check_in": datetime(2026, 10, 22, 14, 0),
+                "check_out": datetime(2026, 10, 24, 12, 0)}
+    assert check("door_code", paid_now).mode == "confirm"  # код от двери — человеку
+
+
+def test_autosend_off_by_default(monkeypatch):
+    from pomogaika.domain.policy import check
+    import pomogaika.domain.policy as policy
+
+    monkeypatch.setattr(policy.settings, "copilot_autosend", False)
+    assert check("typical_reply").mode == "confirm"
+
+
+def test_autosend_makes_copilot_answer_without_owner(monkeypatch):
+    from pomogaika.services.copilot import classify_and_draft
+    import pomogaika.domain.policy as policy
+
+    monkeypatch.setattr(policy.settings, "copilot_autosend", True)
+    result = classify_and_draft("Есть ли парковка?", None)
+    assert result.needs_owner is False
+    assert result.policy_mode == "auto"
+
+    money = classify_and_draft("Можно скидку?", None)
+    assert money.needs_owner is True                       # скидка — всегда человек
