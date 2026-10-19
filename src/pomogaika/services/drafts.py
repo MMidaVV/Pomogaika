@@ -1,12 +1,50 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from pomogaika.db import SessionLocal
 from pomogaika.models import MessageDraft, Property
-from pomogaika.services.copilot import CopilotResult, classify_and_draft
+from pomogaika.services.copilot import CopilotResult, booking_label, classify_and_draft
 from pomogaika.services.guest import bind_guest, match_booking
-from pomogaika.services.guest_links import resolve_code
+from pomogaika.services.guest_links import is_greeting_only, resolve_code, welcome_text
 from pomogaika.services.seed import audit, emit
 from sqlalchemy.orm import Session
+
+
+# Гость иногда отправляет одно и то же дважды: нажал «Отправить», показалось,
+# что не ушло, нажал ещё раз. Двух одинаковых ответов он получить не должен.
+TWIN_WINDOW = timedelta(minutes=2)
+
+
+def _recent_twin(session: Session, text: str, guest_chat_id: str) -> MessageDraft | None:
+    if not guest_chat_id or not text:
+        return None
+    since = datetime.utcnow() - TWIN_WINDOW
+    return (
+        session.query(MessageDraft)
+        .filter(
+            MessageDraft.guest_chat_id == guest_chat_id,
+            MessageDraft.guest_text == text,
+            MessageDraft.created_at >= since,
+        )
+        .order_by(MessageDraft.id.desc())
+        .first()
+    )
+
+
+def _result_of(draft: MessageDraft, booking) -> CopilotResult:
+    """Повтор уже разобранного сообщения: отдаём тот же разбор, ничего не пишем."""
+    return CopilotResult(
+        question_class=draft.question_class,
+        policy_mode=draft.policy_mode,
+        allowed_auto=False,
+        draft=draft.draft_text,
+        matched_faq=draft.matched_faq,
+        reason="Повтор того же сообщения — ответ уже готов",
+        needs_owner=draft.status == "pending_owner",
+        booking_id=draft.booking_id,
+        booking_label=booking_label(booking) if booking else "",
+    )
 
 
 def create_guest_draft(
@@ -32,9 +70,29 @@ def create_guest_draft(
     )
     if booking:
         bind_guest(booking, guest_user_id, guest_chat_id, business_connection_id)
-    result = classify_and_draft(text, booking)
-    if linked is not None and booking is not None and booking.id == linked.id:
-        result.bound_by_code = True
+    twin = _recent_twin(session, text, guest_chat_id)
+    if twin is not None:
+        # гость нажал «Отправить» дважды — второй ответ ему не нужен
+        return twin, _result_of(twin, booking)
+
+    if linked is not None and booking is not None and is_greeting_only(text):
+        # переход по нашей ссылке: отвечаем сами, без модели и без ожидания
+        result = CopilotResult(
+            question_class="greeting",
+            policy_mode="auto",
+            allowed_auto=True,
+            draft=welcome_text(booking),
+            matched_faq="приветствие по ссылке",
+            reason="Гость перешёл по ссылке и поздоровался — отвечаем сразу",
+            needs_owner=False,
+            booking_id=booking.id,
+            booking_label=booking_label(booking),
+            bound_by_code=True,
+        )
+    else:
+        result = classify_and_draft(text, booking)
+        if linked is not None and booking is not None and booking.id == linked.id:
+            result.bound_by_code = True
     draft = MessageDraft(
         property_id=prop.id,
         guest_text=text,

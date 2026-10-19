@@ -131,3 +131,41 @@ def _uid(user) -> int | None:
         return int(user)
     except (TypeError, ValueError):
         return None
+
+
+# Первое сообщение гостя по нашей же ссылке — это приветствие с кодом, а не
+# вопрос. Прогонять его через копайлот нельзя: модель видит обрывок текста
+# с непонятным кодом и отвечает «сообщение выглядит странно, не сообщайте
+# никому данные брони». Для гостя, который только что перешёл по ссылке,
+# это худшее из возможных первых впечатлений.
+GREETING_WORDS = (
+    "здравствуйте", "здравствуй", "добрый день", "доброе утро", "добрый вечер",
+    "доброй ночи", "привет", "приветствую", "день добрый", "хай", "hello", "hi",
+)
+CODE_IN_TEXT = re.compile(r"[A-Za-zА-Яа-я]{2,10}-[0-9a-fA-F]{3,8}")
+
+
+def is_greeting_only(text: str) -> bool:
+    """В сообщении нет ничего, кроме приветствия и кода брони."""
+    rest = CODE_IN_TEXT.sub(" ", text or "").lower()
+    rest = rest.replace("бронь", " ").replace("бронирование", " ")
+    for word in GREETING_WORDS:
+        rest = rest.replace(word, " ")
+    rest = re.sub(r"[^\w]+", " ", rest, flags=re.UNICODE).strip()
+    return not rest
+
+
+def welcome_text(booking: Booking) -> str:
+    """Тёплый ответ на переход по ссылке: кто мы, что знаем, что будет дальше.
+
+    Ни кодов, ни сумм, ни адреса: это приветствие, а не выдача доступа.
+    """
+    name = (booking.guest_name or "").strip()
+    hello = f"{name}, здравствуйте!" if name else "Здравствуйте!"
+    return (
+        f"{hello} Вижу вашу бронь "
+        f"{booking.check_in:%d.%m} {booking.check_in:%H:%M} → "
+        f"{booking.check_out:%d.%m} {booking.check_out:%H:%M}.\n\n"
+        "Код от двери и инструкцию по заезду пришлю сюда за 2 часа до заезда. "
+        "Если что-то понадобится раньше — просто напишите в этот чат."
+    )

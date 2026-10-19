@@ -1935,3 +1935,96 @@ def test_empty_phone_does_not_erase_saved(_prop, _db):
     second = ingest_booking(_db, guest_phone="", **common)
     assert second.booking.id == first.booking.id
     assert second.booking.guest_phone == "+79166080113"
+
+
+# ---------- первое сообщение по ссылке ----------
+
+def test_greeting_with_code_is_not_a_question():
+    from pomogaika.services.guest_links import is_greeting_only
+
+    assert is_greeting_only("Здравствуйте! Бронь KAVA-c793")
+    assert is_greeting_only("привет, бронь KAVA-7f3a")
+    assert is_greeting_only("Добрый день! KAVA-c793")
+    # а это уже вопрос, его нельзя глушить приветствием
+    assert not is_greeting_only("Здравствуйте! Бронь KAVA-c793, во сколько заезд?")
+    assert not is_greeting_only("Куда нам ехать?")
+
+
+def test_link_greeting_gets_warm_answer_without_model(tmp_path, monkeypatch):
+    """На переход по ссылке гость получает приветствие, а не «сообщение странное»."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import Booking, Property
+    from pomogaika.services.drafts import create_guest_draft
+    from pomogaika.services.guest_links import issue_link
+    from pomogaika.services.seed import seed_if_empty
+    import pomogaika.services.drafts as drafts
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'greet.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    seed_if_empty(session)
+    session.commit()
+    prop = session.query(Property).one()
+
+    booking = Booking(
+        property_id=prop.id, platform="yandex", external_id="TEST-GREET",
+        guest_name="Юрий",
+        check_in=datetime.utcnow() + timedelta(days=3),
+        check_out=datetime.utcnow() + timedelta(days=5),
+        paid=True,
+    )
+    session.add(booking)
+    session.commit()
+
+    monkeypatch.setattr("pomogaika.services.guest_links.settings.telegram_owner_username", "kava_owner")
+    url = issue_link(session, booking)
+    session.commit()
+    code = url.split("%20")[-1]
+
+    # модель не должна вызываться вовсе
+    called = []
+    monkeypatch.setattr(drafts, "classify_and_draft",
+                        lambda *a, **k: called.append(1) or (_ for _ in ()).throw(AssertionError("модель вызвана")))
+
+    draft, result = create_guest_draft(
+        session, f"Здравствуйте! Бронь {code}",
+        guest_chat_id="555", guest_user_id="555", channel="telegram_business",
+    )
+    session.commit()
+
+    assert called == []
+    assert result.question_class == "greeting"
+    assert result.needs_owner is False          # уходит сразу, без кнопки
+    assert "Юрий" in draft.draft_text
+    assert "за 2 часа до заезда" in draft.draft_text
+    assert "странно" not in draft.draft_text.lower()
+    assert "мошен" not in draft.draft_text.lower()
+
+
+def test_same_message_twice_gets_one_answer(tmp_path, monkeypatch):
+    """Гость нажал «Отправить» дважды — второй черновик не создаётся."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import MessageDraft, Property
+    from pomogaika.services.drafts import create_guest_draft
+    from pomogaika.services.seed import seed_if_empty
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'twin.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    seed_if_empty(session)
+    session.commit()
+
+    before = session.query(MessageDraft).count()
+    first, _ = create_guest_draft(session, "Есть ли парковка?", guest_chat_id="777")
+    session.commit()
+    second, _ = create_guest_draft(session, "Есть ли парковка?", guest_chat_id="777")
+    session.commit()
+
+    assert first.id == second.id
+    assert session.query(MessageDraft).count() == before + 1
