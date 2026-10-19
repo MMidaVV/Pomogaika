@@ -1,0 +1,1900 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <title>KaVa — шахматка</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      /* холст */
+      --bg: #EDF1F7;
+      --card: #FFFFFF;
+      --line: #E1E8F0;
+      --line-2: #D3DDE9;
+      /* текст */
+      --ink: #13365F;
+      --text: #1F3550;
+      --hint: #5E7189;
+      --muted: #8A99AC;
+      /* синий */
+      --navy: #123A6D;
+      --navy-2: #0E2F5C;
+      --blue: #1E5FA8;
+      --blue-2: #2A6FB8;
+      --blue-soft: #E8F0FA;
+      /* статусы */
+      --amber: #E9B85C;
+      --amber-bg: #FDF7EA;
+      --amber-ink: #8A6420;
+      --green: #1F7B4D;
+      --green-2: #2E9E6B;
+      --green-bg: #DFF3E7;
+      --red: #C2382F;
+      --red-bg: #FBE3E0;
+      --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+      --topbar: 52px;
+      --statusbar: 26px;
+      --tabbar: 60px;
+      --cw: 46px;
+      --name-w: 116px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; background: var(--bg); color: var(--text); color-scheme: light;
+      font: 15px/1.4 "Golos Text", -apple-system, system-ui, sans-serif;
+    }
+    /* overflow и overscroll только у корня: если задать их и html, и body, body становится
+       отдельным скроллером — sticky-шапка уезжает, а вертикальный жест упирается в body */
+    html { overscroll-behavior-x: none; overscroll-behavior-y: contain; }
+    body { overflow-x: hidden; padding-bottom: calc(var(--tabbar) + env(safe-area-inset-bottom)); }
+    button, input { font-family: inherit; }
+    .hidden { display: none !important; }
+    .mono { font-family: var(--mono); font-size: 11px; letter-spacing: -.01em; }
+
+    /* ---------- шапка оператора ---------- */
+    .topbar {
+      position: sticky; top: 0; z-index: 40; height: var(--topbar);
+      display: flex; align-items: center; gap: 10px; padding: 0 10px;
+      background: var(--navy); color: #fff;
+    }
+    .icon-btn {
+      width: 36px; height: 36px; border: 0; background: transparent; border-radius: 8px;
+      display: grid; place-items: center; color: inherit; padding: 0; flex: 0 0 auto;
+    }
+    .icon-btn.bordered { border: 1px solid rgba(255,255,255,.28); width: 38px; height: 34px; }
+    .burger span { display: block; width: 18px; height: 2px; background: #fff; border-radius: 2px; margin: 4px 0; }
+    .brand { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
+    .brand .mark {
+      width: 34px; height: 34px; flex: 0 0 34px; border-radius: 7px; background: var(--blue);
+      display: grid; place-items: center; font: 700 13px "Golos Text"; color: #fff;
+    }
+    .brand .bt { min-width: 0; }
+    .brand b { display: block; font-size: 15px; font-weight: 600; line-height: 1.2; white-space: nowrap; }
+    .brand small { display: block; font-size: 11px; color: rgba(255,255,255,.62); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%; background: var(--blue); flex: 0 0 32px;
+      display: grid; place-items: center; font: 600 12px "Golos Text"; color: #fff;
+    }
+    .statusbar {
+      position: sticky; top: var(--topbar); z-index: 39; height: var(--statusbar);
+      background: var(--navy-2); color: rgba(255,255,255,.78);
+      display: flex; align-items: center; gap: 6px; padding: 0 14px;
+      font-family: var(--mono); font-size: 11px; white-space: nowrap; overflow: hidden;
+    }
+    .statusbar b { color: #fff; font-weight: 600; }
+    .statusbar .hot { color: #F2B84B; }
+
+    /* ---------- панель шахматки ---------- */
+    .toolbar {
+      position: sticky; top: calc(var(--topbar) + var(--statusbar)); z-index: 30;
+      display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+      background: #F5F8FC; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none;
+    }
+    .toolbar::-webkit-scrollbar { display: none; }
+    .seg { display: flex; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; background: #fff; flex: 0 0 auto; }
+    .seg button {
+      border: 0; background: #fff; color: var(--hint); font-size: 14px; font-weight: 500;
+      padding: 0 15px; height: 36px;
+    }
+    .seg button + button { border-left: 1px solid var(--line-2); }
+    .seg button.on { background: var(--navy-2); color: #fff; font-weight: 600; }
+    .tb-btn {
+      border: 1px solid var(--line-2); background: #fff; color: var(--ink); border-radius: 8px;
+      height: 36px; padding: 0 13px; font-size: 14px; font-weight: 500; flex: 0 0 auto;
+    }
+    .tb-group { display: flex; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; background: #fff; flex: 0 0 auto; }
+    .tb-group button { border: 0; background: #fff; color: var(--blue); height: 36px; width: 40px; font-size: 17px; }
+    .tb-group button + button { border-left: 1px solid var(--line-2); }
+
+    /* ---------- строка месяца ---------- */
+    .mline {
+      position: sticky; top: calc(var(--topbar) + var(--statusbar) + 55px); z-index: 20; background: #fff;
+      border-bottom: 1px solid var(--line); height: 38px; display: flex; align-items: center;
+      justify-content: space-between; gap: 8px; padding: 0 12px;
+      font-size: 17px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden;
+    }
+    .mline .mono {
+      color: var(--hint); background: #EFF3F8; border-radius: 5px; padding: 3px 7px; font-weight: 500;
+      white-space: nowrap; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis;
+    }
+    @media (min-width: 480px) {
+      .mline { padding-left: calc(var(--name-w) + 2px); }
+    }
+
+    /* ---------- шахматка ---------- */
+    .tl {
+      background: #fff; overflow: auto; position: relative;
+      /* --app-h ставит JS по настоящей высоте вебвью: 100vh в Telegram больше видимой области */
+      max-height: calc(var(--app-h, 100vh) - var(--topbar) - var(--statusbar) - 150px - var(--tabbar) - env(safe-area-inset-bottom));
+      -webkit-overflow-scrolling: touch;
+      /* только по горизонтали: contain по обеим осям съедал вертикальный свайп по шахматке */
+      overscroll-behavior-x: contain;
+      touch-action: pan-x pan-y;
+    }
+    .trow { display: flex; min-width: min-content; }
+    .name {
+      position: sticky; left: 0; z-index: 6; flex: 0 0 var(--name-w); width: var(--name-w);
+      background: #fff; border-right: 1px solid var(--line-2); border-bottom: 1px solid var(--line);
+      padding: 8px 8px 8px 10px; display: flex; align-items: center; gap: 7px; overflow: hidden;
+    }
+    .name .txt { overflow: hidden; }
+    .name b { display: block; font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+    .name small { display: block; color: var(--muted); font-family: var(--mono); font-size: 10px; white-space: nowrap; }
+    .pdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+    .pdot.avito { background: #1E5FA8; } .pdot.sutochno { background: #2E9E6B; }
+    .pdot.yandex { background: #C2382F; } .pdot.ostrovok { background: #5AA0DC; }
+    .pdot.block { background: #97A6B8; } .pdot.cat { background: var(--navy); border-radius: 2px; }
+
+    .cells { position: relative; flex: 1 0 auto; }
+    .grid-row { display: flex; height: 100%; }
+    .cell {
+      flex: 0 0 var(--cw); width: var(--cw); border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line); background: #fff;
+    }
+    .cell.we { background: #F6F8FB; }
+    .cell.today { background: #EAF1FA; }
+    .cell.pick { background: #DCE9F8; }
+    .cell.pick-edge { background: var(--blue); }
+
+    .head-row { position: sticky; top: 0; z-index: 11; background: #fff; }
+    .head-row .name { z-index: 14; border-bottom: 1px solid var(--line-2); }
+    .head-row .cell {
+      height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1px; border-bottom: 1px solid var(--line-2);
+    }
+    .head-row .d { font-size: 15px; font-weight: 600; color: var(--ink); }
+    .head-row .w { font-family: var(--mono); font-size: 9px; color: var(--muted); }
+    .head-row .cell.weday .d, .head-row .cell.weday .w { color: var(--blue); }
+    .head-row .cell.today { background: #DFEAF7; }
+    .head-row .cell.today .d { color: var(--navy); }
+
+    .row-bars { height: 46px; }
+    .row-bars .cell { height: 100%; }
+    .row-bars .name { align-items: flex-start; padding-top: 13px; }
+    .row-free.row-cat, .row-free.row-cat .cell, .row-free.row-cat .name { height: 28px; }
+    .row-free.row-cat .name .txt { display: flex; align-items: baseline; gap: 4px; }
+    .row-free.row-cat .name small { display: inline; }
+    .row-free .name b { font-size: 12px; font-weight: 600; }
+    .row-free { height: 22px; }
+    .row-free .cell {
+      height: 22px; display: grid; place-items: center;
+      font-family: var(--mono); font-size: 11px; color: var(--hint);
+    }
+    .row-free .name { height: 22px; padding-top: 0; padding-bottom: 0; }
+    .row-free .cell.zero { color: var(--red); font-weight: 700; }
+    .row-cat .name b { font-weight: 600; }
+
+    .bars { position: absolute; inset: 0; pointer-events: none; }
+    .bar {
+      position: absolute; top: 7px; height: 32px; border-radius: 4px; pointer-events: auto;
+      display: flex; align-items: center; padding: 0 8px; gap: 5px; border: 0;
+      font: 500 13px "Golos Text", sans-serif; text-align: left;
+      white-space: nowrap; overflow: visible;
+    }
+    .bar .cap { overflow: hidden; text-overflow: ellipsis; }
+    .bar.blue { background: var(--blue-2); color: #fff; }
+    .bar.pale { background: #C6D9EC; color: var(--navy); }
+    .bar.green { background: var(--green-2); color: #fff; }
+    .bar.hatch {
+      background: repeating-linear-gradient(135deg, #F7E6BE 0 8px, #FBF1D8 8px 16px);
+      border: 1px solid var(--amber); color: var(--amber-ink);
+    }
+    .bar.gray {
+      background: repeating-linear-gradient(135deg, #E4EAF1 0 7px, #D5DEE8 7px 14px); color: #56687C;
+    }
+    .bar.clipL { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+    .bar.clipR { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+    .bar .price {
+      position: absolute; right: -2px; top: -9px; background: var(--red); color: #fff;
+      font-family: var(--mono); font-size: 10px; font-weight: 600; line-height: 1;
+      padding: 3px 5px; border-radius: 3px;
+    }
+    .bar .warn { font-weight: 700; }
+    .bar.blue .warn, .bar.green .warn { color: #FFE0A3; }
+    .bar.hatch .warn, .bar.pale .warn { color: var(--red); }
+    .nowline { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--red); z-index: 5; pointer-events: none; }
+    .nowline.head::before {
+      content: ""; position: absolute; top: -3px; left: -3px; width: 8px; height: 8px;
+      border-radius: 50%; background: var(--red);
+    }
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 10px 14px; padding: 11px 14px; color: var(--hint);
+      font-size: 12px; background: #fff; border-bottom: 1px solid var(--line);
+    }
+    .legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+    /* ---------- плитки и сводка ---------- */
+    .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px 12px 10px; }
+    .tile { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; }
+    .tile b { display: block; font-size: 24px; font-weight: 600; line-height: 1.1; color: var(--ink); }
+    .tile span { color: var(--hint); font-size: 12px; }
+    .tile.warn { background: var(--amber-bg); border-color: var(--amber); }
+    .tile.warn b, .tile.warn span { color: var(--amber-ink); }
+    .today-card { margin: 0 12px 14px; }
+    .today-card .line { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .today-card .line:last-child { border-bottom: 0; }
+    .today-card .line span { color: var(--hint); }
+    .today-card .line b { color: var(--ink); }
+
+    /* ---------- общие блоки ---------- */
+    .page { padding: 12px 12px 18px; }
+    .page h1 { margin: 4px 0 12px; font-size: 24px; font-weight: 600; color: var(--ink); }
+    .crumb { color: var(--blue); font-size: 13px; margin: 2px 0; }
+    .sec-title { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 10px; }
+    .sec-title h2 { margin: 0; font-size: 19px; font-weight: 600; color: var(--ink); }
+    .link { color: var(--blue); background: none; border: 0; font-size: 14px; padding: 0; }
+    .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      flex: 0 0 auto; border: 1px solid var(--line-2); background: #fff; border-radius: 8px;
+      padding: 9px 13px; font-size: 14px; color: var(--text); display: flex; align-items: center; gap: 8px;
+    }
+    .chip.on { border-color: var(--navy-2); background: var(--navy-2); color: #fff; }
+    .chip b { font-weight: 600; font-family: var(--mono); font-size: 13px; }
+    .chip i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+    .chip.on i { box-shadow: 0 0 0 2px rgba(255,255,255,.35); }
+    .schip {
+      font-family: var(--mono); font-size: 11px; font-weight: 600; border-radius: 4px;
+      padding: 3px 7px; white-space: nowrap; flex: 0 0 auto;
+    }
+    .schip.amber { background: #FBEFD4; color: var(--amber-ink); }
+    .schip.green { background: var(--green-bg); color: var(--green); }
+    .schip.red { background: var(--red-bg); color: var(--red); }
+    .schip.gray { background: #EAEFF5; color: var(--hint); }
+    .schip.blue { background: var(--blue-soft); color: var(--blue); }
+    .hitl {
+      display: inline-block; background: #FBEFD4; color: var(--amber-ink); border-radius: 5px;
+      padding: 4px 9px; font-size: 12px; font-weight: 600; margin: 0 6px 6px 0;
+    }
+    .searchbar { display: flex; gap: 8px; margin: 12px 0 8px; }
+    .searchbar input {
+      flex: 1; border: 1px solid var(--line-2); border-radius: 8px; height: 44px;
+      padding: 0 13px; font-size: 15px; background: #fff; color: var(--text);
+    }
+    .searchbar input::placeholder { color: var(--muted); }
+    .searchbar .icon-btn.bordered {
+      border-color: var(--line-2); color: var(--hint); width: 44px; height: 44px; border-radius: 8px;
+    }
+    .field { margin-top: 10px; }
+    .field label { display: block; color: var(--hint); font-size: 12px; margin-bottom: 4px; }
+    .field input {
+      width: 100%; border: 1px solid var(--line-2); border-radius: 8px; height: 44px;
+      padding: 0 13px; font-size: 15px; background: #fff; color: var(--text);
+    }
+    .field input::placeholder { color: var(--muted); }
+    /* поля новых экранов: итог проживания, регистрация в МВД */
+    .inp {
+      width: 100%; border: 1px solid var(--line-2); border-radius: 8px; min-height: 44px;
+      padding: 10px 13px; font-size: 15px; background: #fff; color: var(--text);
+      margin-top: 6px; font-family: inherit;
+    }
+    .inp::placeholder { color: var(--muted); }
+    select.inp { height: 44px; padding: 0 10px; }
+    textarea.inp { resize: vertical; line-height: 1.4; }
+    .drawer .mi .tag, .mi .tag {
+      margin-left: 6px; font-size: 10px; padding: 1px 5px; border-radius: 5px;
+      background: var(--amber-bg); color: var(--amber); vertical-align: middle;
+    }
+    .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .countline { display: flex; align-items: center; justify-content: space-between; margin: 10px 2px; }
+    .countline b { font-size: 14px; font-weight: 600; color: var(--ink); }
+
+    .bcard { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px; margin-bottom: 9px; }
+    .bcard.attn { border-color: var(--amber); background: var(--amber-bg); }
+    .rdy { font-size: 13px; color: var(--text); margin-top: 4px; line-height: 1.45; }
+    .rdy b { font-weight: 500; }
+    .rdy .ok { color: #2E9E6B; margin-right: 5px; }
+    .rdy .bad { color: var(--amber); margin-right: 5px; }
+    .bcard .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+    .bcard .code {
+      color: var(--ink); font-family: var(--mono); font-size: 14px; font-weight: 600;
+      display: flex; align-items: center; gap: 7px;
+      min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    }
+    .bcard .date { flex: 0 0 auto; color: var(--hint); font-size: 13px; font-family: var(--mono); }
+    .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 10px; margin-top: 12px; }
+    .facts .k, .fact .k { color: var(--hint); font-size: 12px; }
+    .facts .v, .fact .v { font-size: 15px; color: var(--text); overflow-wrap: anywhere; }
+    .fact { margin-top: 12px; }
+    .v.minus { color: var(--red); font-weight: 600; }
+    .btn {
+      width: 100%; height: 46px; border: 0; border-radius: 8px; background: var(--blue-soft);
+      color: var(--blue); font-size: 15px; font-weight: 600; margin-top: 12px;
+    }
+    .btn.solid { background: var(--green); color: #fff; }
+    .btn.blue { background: var(--blue); color: #fff; }
+    .btn.ghost { background: #fff; border: 1px solid var(--line-2); color: var(--hint); font-weight: 500; }
+    .btn.danger { background: #fff; border: 1px solid var(--line-2); color: var(--red); }
+
+    /* ---------- список уведомлений ---------- */
+    .nlist { background: #fff; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .nrow {
+      display: flex; align-items: center; gap: 13px; padding: 13px 15px; width: 100%;
+      border: 0; border-bottom: 1px solid var(--line); background: #fff; text-align: left;
+    }
+    .nrow:last-child { border-bottom: 0; }
+    .nrow .ic { width: 24px; flex: 0 0 24px; display: grid; place-items: center; color: var(--blue); }
+    .nrow .tt { flex: 1; min-width: 0; }
+    .nrow .tt b { display: block; font-size: 15px; font-weight: 600; color: var(--ink); }
+    .nrow .tt span { display: block; color: var(--hint); font-size: 13px; }
+    .pill {
+      background: var(--red); color: #fff; border-radius: 5px; padding: 3px 8px;
+      font-family: var(--mono); font-size: 12px; font-weight: 600; flex: 0 0 auto;
+    }
+    .band { height: 18px; background: var(--bg); }
+
+    /* ---------- нижняя навигация ---------- */
+    .tabbar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: #fff;
+      border-top: 1px solid var(--line-2); display: grid; grid-template-columns: repeat(5, 1fr);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tabbar button {
+      border: 0; background: transparent; color: var(--hint); font-size: 10px; font-weight: 500;
+      height: var(--tabbar); display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; position: relative; padding: 0 2px; letter-spacing: -.01em; white-space: nowrap;
+      min-width: 0; overflow: hidden;
+    }
+    .tabbar button.on { color: var(--navy); font-weight: 600; }
+    .tabbar button.on::before {
+      content: ""; position: absolute; top: 0; left: 18%; right: 18%; height: 2px; background: var(--blue);
+    }
+    .tabbar .fab { color: var(--blue); }
+    .tabbar .fab .circle {
+      width: 30px; height: 30px; border-radius: 50%; background: var(--blue); color: #fff;
+      display: grid; place-items: center; font-size: 20px; line-height: 1;
+    }
+    .tabbar .dot-badge {
+      position: absolute; top: 4px; left: calc(50% + 4px); background: var(--red); color: #fff;
+      border-radius: 9px; min-width: 19px; height: 17px; padding: 0 5px;
+      font-family: var(--mono); font-size: 11px; font-weight: 600; display: grid; place-items: center;
+    }
+
+    /* ---------- шторки ---------- */
+    .backdrop {
+      position: fixed; inset: 0; background: rgba(12,32,58,.42); z-index: 50; opacity: 0;
+      pointer-events: none; transition: opacity .18s;
+    }
+    .backdrop.on { opacity: 1; pointer-events: auto; }
+    .sheet {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: #fff;
+      border-radius: 14px 14px 0 0; padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+      max-height: calc(var(--app-h, 100vh) * .82); overflow: auto; overscroll-behavior: contain;
+      transform: translateY(102%); transition: transform .22s ease;
+      box-shadow: 0 -10px 30px rgba(12,40,72,.18);
+    }
+    .sheet.on { transform: translateY(0); }
+    .grab { width: 38px; height: 4px; border-radius: 4px; background: var(--line-2); margin: 6px auto 12px; }
+    .sheet h3 { margin: 0 0 2px; font-size: 18px; font-weight: 600; color: var(--ink); }
+    .sheet .sub { color: var(--hint); font-size: 13px; }
+    .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+    .x { border: 0; background: transparent; font-size: 22px; color: var(--muted); padding: 0 4px; }
+
+    .drawer {
+      position: fixed; top: 0; bottom: 0; left: 0; width: 82%; max-width: 330px; z-index: 60;
+      background: #fff; transform: translateX(-102%); transition: transform .22s ease; overflow: auto; overscroll-behavior: contain;
+      padding: 0 0 30px;
+    }
+    .drawer.on { transform: translateX(0); }
+    .drawer .dhead { background: var(--navy); color: #fff; padding: 16px 18px; }
+    .drawer .dhead b { font-size: 16px; font-weight: 600; }
+    .drawer .dhead small { display: block; color: rgba(255,255,255,.65); font-size: 12px; margin-top: 2px; }
+    .drawer h4 {
+      margin: 16px 18px 6px; font-size: 12px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .drawer button.mi {
+      display: block; width: 100%; text-align: left; border: 0; background: transparent;
+      padding: 10px 18px; font-size: 15px; color: var(--text);
+    }
+    .drawer button.mi.on { color: var(--blue); font-weight: 600; }
+    .drawer button.mi.off { color: var(--muted); }
+    .drawer .mi small { display: block; color: var(--muted); font-size: 11px; }
+    .drawer .tag {
+      background: var(--green-bg); color: var(--green); border-radius: 3px; font-family: var(--mono);
+      font-size: 10px; padding: 2px 5px; margin-left: 6px;
+    }
+
+    /* ---------- чат ---------- */
+    .chat {
+      position: fixed; inset: 0; z-index: 65; background: #fff; display: flex; flex-direction: column;
+      transform: translateY(100%); transition: transform .22s ease;
+    }
+    .chat.on { transform: translateY(0); }
+    .chat-head {
+      display: flex; align-items: center; justify-content: space-between; padding: 14px 16px;
+      background: var(--navy); color: #fff;
+    }
+    .chat-head h3 { margin: 0; font-size: 17px; font-weight: 600; }
+    .chat-head .x { color: rgba(255,255,255,.8); }
+    .chat-sub { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--line); }
+    .chat-sub b { font-size: 15px; font-weight: 600; color: var(--ink); }
+    .chat-sub span { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+    .chat .nlist { flex: 1; overflow: auto; overscroll-behavior: contain; }
+    .chat-body { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 16px; background: #F7F9FC; display: flex; flex-direction: column; gap: 10px; }
+    .chat-day { text-align: center; color: var(--muted); font-size: 12px; }
+    .msg { max-width: 82%; padding: 10px 12px; border-radius: 10px; font-size: 15px; line-height: 1.4; }
+    .msg .t { display: block; text-align: right; color: var(--muted); font-family: var(--mono); font-size: 10px; margin-top: 4px; }
+    .msg.in { background: #fff; border: 1px solid var(--line); align-self: flex-start; }
+    .msg.out { background: var(--blue-soft); border: 1px solid #CBDDF2; align-self: flex-end; }
+    .msg.draft { background: var(--amber-bg); border: 1px solid var(--amber); align-self: flex-end; color: var(--text); }
+    .chat-foot {
+      border-top: 1px solid var(--line); padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+      display: flex; gap: 8px; background: #fff;
+    }
+    .chat-foot input { flex: 1; border: 1px solid var(--line-2); border-radius: 8px; height: 42px; padding: 0 12px; font-size: 15px; }
+    .send { width: 44px; height: 42px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; font-size: 16px; }
+    .empty { color: var(--hint); font-size: 14px; padding: 18px 2px; }
+    .toast {
+      position: fixed; left: 50%; bottom: calc(var(--tabbar) + 18px); transform: translateX(-50%) translateY(20px);
+      background: var(--navy); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px;
+      opacity: 0; transition: .2s; z-index: 80; pointer-events: none; max-width: 86%;
+    }
+    .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn burger" id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
+    <div class="brand">
+      <span class="mark">KV</span>
+      <span class="bt"><b>Помогайка</b><small id="brand-sub">рабочее место собственника</small></span>
+    </div>
+    <button class="icon-btn bordered" id="chat-open" aria-label="Чат с гостем">
+      <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><rect x="1.5" y="2.5" width="17" height="13" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M5 18l3-2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+    <div class="avatar" id="avatar">ГЛ</div>
+  </header>
+  <div class="statusbar" id="statusbar">загружаю…</div>
+
+  <!-- ШАХМАТКА -->
+  <section id="s-grid">
+    <div class="toolbar">
+      <div class="seg">
+        <button type="button" id="sc-day">День</button>
+        <button type="button" id="sc-month" class="on">Месяц</button>
+      </div>
+      <button class="tb-btn" id="go-today">Сегодня</button>
+      <button class="tb-btn" id="obj-pick">Объекты</button>
+      <div class="tb-group">
+        <button type="button" id="prev">←</button>
+        <button type="button" id="next">→</button>
+      </div>
+      <button class="tb-btn" id="more">⋮</button>
+    </div>
+    <div class="mline" id="mline"></div>
+    <div class="tl" id="tl"></div>
+    <div class="legend" id="legend"></div>
+    <div id="summary"></div>
+  </section>
+
+  <!-- БРОНИРОВАНИЯ -->
+  <section id="s-book" class="page hidden"></section>
+  <!-- УВЕДОМЛЕНИЯ -->
+  <section id="s-notify" class="hidden"></section>
+  <!-- ПОИСК -->
+  <section id="s-search" class="page hidden"></section>
+
+  <div class="backdrop" id="backdrop"></div>
+  <div class="sheet" id="sheet"></div>
+  <aside class="drawer" id="drawer"></aside>
+  <div class="chat" id="chat"></div>
+  <div class="toast" id="toast"></div>
+
+  <nav class="tabbar">
+    <button type="button" data-tab="grid" class="on">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      Главная
+    </button>
+    <button type="button" data-tab="book">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="13" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M19 7v13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      Брони
+    </button>
+    <button type="button" class="fab" id="fab">
+      <span class="circle">+</span>
+      Забронировать
+    </button>
+    <button type="button" data-tab="notify">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 18a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      Уведомления
+      <span class="dot-badge hidden" id="tab-badge">0</span>
+    </button>
+    <button type="button" data-tab="search">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      Поиск
+    </button>
+  </nav>
+
+<script>
+const tg = window.Telegram && window.Telegram.WebApp;
+
+// Реальная высота вебвью: в Telegram 100vh больше того, что видно на экране,
+// из-за этого низ страницы уезжал за край и казалось, что скролла нет.
+function syncViewportHeight() {
+  const h = (tg && (tg.viewportStableHeight || tg.viewportHeight)) || window.innerHeight;
+  if (h) document.documentElement.style.setProperty("--app-h", h + "px");
+}
+syncViewportHeight();
+window.addEventListener("resize", syncViewportHeight);
+if (tg && tg.onEvent) tg.onEvent("viewportChanged", syncViewportHeight);
+
+if (tg) {
+  tg.ready(); tg.expand();
+  if (tg.setHeaderColor) tg.setHeaderColor("#ffffff");
+  if (tg.setBackgroundColor) tg.setBackgroundColor("#EEF1F7");
+  if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+}
+const haptic = (kind) => { try { if (kind === "ok" || kind === "error") tg.HapticFeedback.notificationOccurred(kind === "ok" ? "success" : "error"); else tg.HapticFeedback.impactOccurred("light"); } catch (e) {} };
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+const WD = ["ВС","ПН","ВТ","СР","ЧТ","ПТ","СБ"];
+const PLAT_ORDER = ["avito","sutochno","ostrovok","yandex"];
+
+let D = null;                 // ответ /api/miniapp
+let year, month;              // показанный месяц
+let scale = "month";          // month | day
+let tab = "grid";
+let pickA = null, pickB = null, pickP = null;
+let objFilter = null;              // null = все объекты
+let bookFilter = "active";
+let statsOpen = false;
+let query = "";
+
+const now = new Date();
+year = now.getFullYear(); month = now.getMonth() + 1;
+
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const TODAY = iso(new Date());
+const money = (n) => Number(n || 0).toLocaleString("ru-RU");
+const dmy = (s) => s.slice(8, 10) + "." + s.slice(5, 7) + "." + s.slice(0, 4);
+const shortDay = (s) => s.slice(8, 10) + "." + s.slice(5, 7);
+const hhmm = (s) => s.slice(11, 16);
+// Подпись занятости. Просто «Занято» в завершённых ничего не объясняет:
+// непонятно, чья это была бронь и почему нет имени. Пишем площадку и состояние.
+// Площадка отдаёт занятость кусками — по ночи на событие, поэтому одна и та же
+// витрина попадает в источники десятки раз. Для показа сводим к списку площадок.
+function sourceTitles(b) {
+  return [...new Set((b.sources || []).map((s) => s.title))];
+}
+
+function sourceGroups(b) {
+  const map = new Map();
+  for (const s of b.sources || []) {
+    const key = `${s.title}|${s.kind}`;
+    map.set(key, (map.get(key) || 0) + 1);
+  }
+  return [...map.entries()].map(([key, n]) => {
+    const [title, kind] = key.split("|");
+    return { title, kind, count: n };
+  });
+}
+
+function who(b) {
+  if (b && !b.busy && b.guest_name) return b.guest_name;
+  if (!b) return "Занято";
+  // одна площадка может дать несколько записей — в подписи она нужна один раз
+  const titles = sourceTitles(b);
+  const from = titles.length > 2
+    ? `${titles[0]} + ещё ${titles.length - 1}`
+    : titles.join(" + ") || b.platform_title || "";
+  const state = b.stage === "past" ? "завершено" : "без имени";
+  return from ? `${from} · ${state}` : (b.stage === "past" ? "Завершено" : "Занято");
+}
+function shortCode(code) {
+  let c = String(code || "").trim();
+  const at = c.indexOf("@");
+  if (at > 0) c = c.slice(0, at);
+  else if (at === 0) c = c.slice(1);
+  if (c.length > 14) c = "…" + c.slice(-11);
+  return c || "без номера";
+}
+const nightsWord = (n) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? "ночь" : a >= 2 && a <= 4 && (b < 12 || b > 14) ? "ночи" : "ночей"; };
+const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return n + " " + (a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many); };
+
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text; t.classList.add("on");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), 2600);
+}
+
+async function api(url, body) {
+  // initData Telegram подписан ботом — по нему сервер понимает, что это свой человек
+  const headers = { "X-Telegram-Init-Data": (tg && tg.initData) || "" };
+  let opt = { headers };
+  if (body) {
+    headers["Content-Type"] = "application/json";
+    opt = { method: "POST", headers, body: JSON.stringify(body) };
+  }
+  const res = await fetch(url, opt);
+  if (res.status === 401) {
+    // в браузере входим через виджет Telegram; в вебвью идти некуда — там подпись уже должна быть
+    if (!headers["X-Telegram-Init-Data"]) { location.href = "/login"; return new Promise(() => {}); }
+    throw new Error("Откройте приложение заново через бота в Telegram");
+  }
+  if (!res.ok) {
+    // причина с сервера важнее кода: «письмо не отправлено: …» человеку понятнее, чем 502
+    let why = "";
+    try { const e = await res.json(); why = (e && e.detail) || ""; } catch (_) { why = ""; }
+    throw new Error(why || "HTTP " + res.status);
+  }
+  return res.json();
+}
+
+async function load(keepScroll) {
+  const left = keepScroll && $("tl") ? $("tl").scrollLeft : null;
+  try {
+    D = await api(`/api/miniapp?year=${year}&month=${month}`);
+  } catch (err) {
+    $("tl").innerHTML = `<div class="empty" style="padding:20px">Не открылось: ${esc(err.message)}</div>`;
+    return;
+  }
+  const n = D.attention.drafts + D.attention.conflicts + D.attention.tasks;
+  $("tab-badge").classList.toggle("hidden", !n);
+  $("tab-badge").textContent = n;
+  $("statusbar").innerHTML =
+    `Требуют вас: <b class="${n ? "hot" : ""}">${n}</b> · Объектов: <b>${D.objects.length}</b>`
+    + ` · Загрузка: <b>${D.month.occupancy}%</b> · Ночей: <b>${D.month.occupied}/${D.month.slots}</b>`
+    + ` · Броней: <b>${D.bookings.length}</b>`;
+  $("brand-sub").textContent = D.objects.length > 1
+    ? `объектов: ${D.objects.length}` : D.property.title;
+  objLabel();
+  renderGrid();
+  renderBook();
+  renderNotify();
+  renderSearch();
+  if (left != null) $("tl").scrollLeft = left;
+}
+
+/* =================== ШАХМАТКА =================== */
+
+function days() { return D.month.days; }
+function dayIdx(isoDate) {
+  const d = new Date(isoDate.slice(0, 10) + "T12:00:00");
+  const base = new Date(year, month - 1, 1, 12, 0, 0);
+  return Math.round((d - base) / 86400000);
+}
+function cw() { return scale === "day" ? 92 : 46; }
+
+function geom(startIso, endIso) {
+  const n = days();
+  let l = dayIdx(startIso) + 0.42;
+  let r = dayIdx(endIso) + 0.58;
+  const clipL = l < 0, clipR = r > n;
+  l = Math.max(l, 0); r = Math.min(r, n);
+  return { l, w: Math.max(r - l, 0.3), clipL, clipR, visible: r > 0 && l < n };
+}
+
+function barClass(b) {
+  if (b.stage === "past") return "pale";
+  if (b.status === "staying") return "green";
+  if (b.status === "pending" || !b.paid) return "hatch";
+  return "blue";
+}
+
+function renderGrid() {
+  const n = days();
+  const W = cw();
+  document.documentElement.style.setProperty("--cw", W + "px");
+  const total = n * W;
+  const cellsOf = (propId) => {
+    let out = "";
+    for (let i = 0; i < n; i++) {
+      const d = new Date(year, month - 1, i + 1);
+      const wd = d.getDay();
+      const cls = ["cell"];
+      if (wd === 0 || wd === 6) cls.push("we");
+      if (iso(d) === TODAY) cls.push("today");
+      const tap = propId ? ` data-i="${i}" data-p="${propId}"` : "";
+      out += `<div class="${cls.join(" ")}"${tap}></div>`;
+    }
+    return out;
+  };
+
+  // шапка с датами
+  let head = "";
+  for (let i = 0; i < n; i++) {
+    const d = new Date(year, month - 1, i + 1);
+    const wd = d.getDay();
+    const cls = ["cell"];
+    if (wd === 0 || wd === 6) { cls.push("we", "weday"); }
+    if (iso(d) === TODAY) cls.push("today");
+    head += `<div class="${cls.join(" ")}"><span class="d">${i + 1}</span><span class="w">${WD[wd]}</span></div>`;
+  }
+
+  // строка свободных объектов по дням
+  const shown = shownObjects();
+  let free = "";
+  for (let i = 0; i < n; i++) {
+    const d = new Date(year, month - 1, i + 1);
+    const wd = d.getDay();
+    const count = shown.reduce((sum, o) => sum + (o.free[i] || 0), 0);
+    const cls = ["cell"];
+    if (wd === 0 || wd === 6) cls.push("we");
+    if (iso(d) === TODAY) cls.push("today");
+    if (!count) cls.push("zero");
+    free += `<div class="${cls.join(" ")}">${count}</div>`;
+  }
+
+  const nowMark = nowLine(W, false);
+  const nowHead = nowLine(W, true);
+  const rows = [];
+
+  // строка-категория: сколько объектов свободно. На одном объекте не нужна —
+  // там это просто «занято/свободно», и так видно по полосам
+  if (shown.length > 1) rows.push(`
+    <div class="trow row-free row-cat">
+      <div class="name"><span class="pdot cat"></span><span class="txt">
+        <b>Свободно</b></span></div>
+      <div class="cells" style="width:${total}px">
+        <div class="grid-row">${free}</div>
+        <div class="bars">${nowHead}</div>
+      </div>
+    </div>`);
+
+  // строка на объект, полосы внутри строки раскладываются по дорожкам
+  shown.forEach((o) => {
+    const { items, lanes } = laneItems(o.id);
+    const h = 46 + (lanes - 1) * LANE_H;
+    const bars = items.map((it) => (it.kind === "book"
+      ? barHtml(it.data, W, it.lane)
+      : blockBar(it.data, W, it.lane))).join("");
+    rows.push(`
+      <div class="trow row-bars" style="height:${h}px">
+        <div class="name"><span class="pdot cat"></span><span class="txt">
+          <b>${esc(o.title)}</b><small>${esc(o.address)} · ${o.occupancy}%</small></span></div>
+        <div class="cells" style="width:${total}px">
+          <div class="grid-row">${cellsOf(o.id)}</div>
+          <div class="bars">${nowMark}${bars}</div>
+        </div>
+      </div>`);
+  });
+
+  $("mline").innerHTML = `<span>${MONTHS[month - 1]} ${year}</span>`
+    + `<span class="mono">занято ${D.month.occupied}/${D.month.slots} · загрузка ${D.month.occupancy}%</span>`;
+  $("tl").innerHTML = `
+    <div class="trow head-row">
+      <div class="name"><span class="txt"><small>загрузка ${D.month.occupancy}%</small></span></div>
+      <div class="cells" style="width:${total}px"><div class="grid-row">${head}</div></div>
+    </div>
+    ${rows.join("")}`;
+
+  $("legend").innerHTML = `
+    <span><i style="background:var(--blue-2)"></i>подтверждена</span>
+    <span><i style="background:var(--green-2)"></i>проживает</span>
+    <span><i style="background:repeating-linear-gradient(135deg,#F7E6BE 0 4px,#FBF1D8 4px 8px);border:1px solid var(--amber)"></i>без оплаты</span>
+    <span><i style="background:repeating-linear-gradient(135deg,#E4EAF1 0 4px,#D5DEE8 4px 8px)"></i>закрыто у нас</span>
+    <span><i style="background:#C6D9EC"></i>завершена</span>`;
+
+  renderSummary();
+  $("tl").querySelectorAll(".cell[data-i]").forEach((el) => {
+    el.onclick = () => tapCell(Number(el.dataset.i), Number(el.dataset.p));
+  });
+  $("tl").querySelectorAll("[data-book]").forEach((el) => { el.onclick = () => openBooking(Number(el.dataset.book)); });
+  $("tl").querySelectorAll("[data-block]").forEach((el) => { el.onclick = () => openBlock(Number(el.dataset.block)); });
+  paintPick();
+}
+
+function renderSummary() {
+  const staying = D.today.length, arr = D.arriving.length, lea = D.leaving.length;
+  const attn = D.attention.drafts + D.attention.conflicts + D.attention.tasks;
+  const names = (list) => list.map((x) => esc(who(D.bookings.find((b) => b.id === x.id) || x))).join(", ") || "—";
+  $("summary").innerHTML = `
+    <div class="tiles">
+      <div class="tile"><b>${staying}</b><span>проживают</span></div>
+      <div class="tile"><b>${arr}</b><span>заезд сегодня</span></div>
+      <div class="tile${attn ? " warn" : ""}"><b>${attn}</b><span>требуют вас</span></div>
+    </div>
+    <div class="bcard today-card">
+      <div class="line"><span>Сейчас проживают</span><b style="font-weight:500">${names(D.today)}</b></div>
+      <div class="line"><span>Заезд сегодня</span><b style="font-weight:500">${names(D.arriving)}</b></div>
+      <div class="line"><span>Выезд сегодня</span><b style="font-weight:500">${names(D.leaving)}</b></div>
+      <div class="line"><span>Объектов в работе</span><b style="font-weight:500">${D.objects.length} · загрузка ${D.month.occupancy}%</b></div>
+    </div>`;
+}
+
+const LANE_H = 38;
+
+function laneItems(propId) {
+  const items = [];
+  D.bookings.filter((b) => b.property_id === propId).forEach((b) => {
+    const g = geom(b.check_in, b.check_out);
+    if (g.visible) items.push({ g, kind: "book", data: b });
+  });
+  (D.blocks || []).filter((bl) => bl.property_id === propId).forEach((bl) => {
+    const g = geom(bl.start, bl.end);
+    if (g.visible) items.push({ g, kind: "block", data: bl });
+  });
+  items.sort((a, b) => a.g.l - b.g.l);
+  const ends = [];
+  items.forEach((it) => {
+    let k = 0;
+    while (k < ends.length && it.g.l < ends[k] - 0.02) k += 1;
+    it.lane = k;
+    ends[k] = it.g.l + it.g.w;
+  });
+  return { items, lanes: Math.max(1, ends.length) };
+}
+
+function barHtml(b, W, lane) {
+  const g = geom(b.check_in, b.check_out);
+  if (!g.visible) return "";
+  const cls = ["bar", barClass(b), g.clipL ? "clipL" : "", g.clipR ? "clipR" : ""].filter(Boolean).join(" ");
+  const wide = g.w * W > 58;
+  const price = b.amount && wide ? `<span class="price">${b.amount}</span>` : "";
+  const mark = b.conflict ? `<span class="warn">!</span>` : "";
+  const top = 7 + lane * LANE_H;
+  return `<button type="button" class="${cls}" data-book="${b.id}" style="left:${g.l * W}px;width:${g.w * W}px;top:${top}px">${mark}<span class="cap">${esc(who(b))}</span>${price}</button>`;
+}
+
+function blockBar(bl, W, lane) {
+  const g = geom(bl.start, bl.end);
+  if (!g.visible) return "";
+  const cls = ["bar", "gray", g.clipL ? "clipL" : "", g.clipR ? "clipR" : ""].filter(Boolean).join(" ");
+  const top = 7 + lane * LANE_H;
+  return `<button type="button" class="${cls}" data-block="${bl.id}" style="left:${g.l * W}px;width:${g.w * W}px;top:${top}px"><span class="cap">${esc(bl.reason)}</span></button>`;
+}
+
+function nowLine(W, head) {
+  const d = new Date();
+  if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return "";
+  const frac = (d.getHours() * 60 + d.getMinutes()) / 1440;
+  return `<div class="nowline${head ? " head" : ""}" style="left:${(d.getDate() - 1 + frac) * W}px"></div>`;
+}
+
+function pickIdx() {
+  if (pickA == null) return [];
+  const a = pickB == null ? pickA : Math.min(pickA, pickB);
+  const b = pickB == null ? pickA : Math.max(pickA, pickB);
+  const out = [];
+  for (let i = a; i <= b; i++) out.push(i);
+  return out;
+}
+
+function paintPick() {
+  const ids = pickIdx();
+  $("tl").querySelectorAll(".cell[data-i]").forEach((el) => {
+    el.classList.remove("pick", "pick-edge");
+    if (!ids.length || Number(el.dataset.p) !== pickP) return;
+    const i = Number(el.dataset.i);
+    if (i === ids[0] || i === ids[ids.length - 1]) el.classList.add("pick-edge");
+    else if (ids.includes(i)) el.classList.add("pick");
+  });
+}
+
+function tapCell(i, propId) {
+  haptic();
+  if (pickA == null || pickB != null || pickP !== propId) {
+    pickP = propId; pickA = i; pickB = null;
+    paintPick(); openRange();
+    return;
+  }
+  pickB = i; paintPick(); openRange();
+}
+
+/* =================== ШТОРКИ =================== */
+
+function openSheet(html) {
+  $("sheet").innerHTML = `<div class="grab"></div>` + html;
+  $("sheet").classList.add("on");
+  $("backdrop").classList.add("on");
+  $("sheet").querySelectorAll("[data-close]").forEach((b) => (b.onclick = closeAll));
+}
+function closeAll() {
+  $("sheet").classList.remove("on");
+  $("drawer").classList.remove("on");
+  $("backdrop").classList.remove("on");
+}
+$("backdrop").onclick = () => { closeAll(); pickA = pickB = null; paintPick(); };
+
+function openRange() {
+  const ids = pickIdx();
+  if (!ids.length || pickP == null) return;
+  const obj = objectOf(pickP);
+  const cal = ids.map((i) => D.calendar[i]);
+  const first = cal[0], last = cal[cal.length - 1];
+  const taken = ids.filter((i) => !obj.free[i]).length;
+  const blocked = ids.filter((i) => (D.blocks || []).some((bl) =>
+    bl.property_id === pickP && dayIdx(bl.start) <= i && i < dayIdx(bl.end))).length;
+  const busy = taken - blocked;
+  const title = ids.length === 1 ? dmy(first.date) : `${shortDay(first.date)} — ${dmy(last.date)}`;
+  const guests = [];
+  cal.forEach((d) => (d.stays || []).forEach((s) => {
+    if (s.property_id === pickP && !guests.find((g) => g.id === s.id)) guests.push(s);
+  }));
+  const list = guests.map((s) => {
+    const b = D.bookings.find((x) => x.id === s.id) || s;
+    return `<button class="btn ghost" style="text-align:left;height:auto;padding:12px 14px" data-open="${s.id}">
+      <b style="font-weight:600">${esc(who(b))}</b><br><span style="color:var(--hint);font-size:13px">${esc(b.platform_title || "")} · ${shortDay(b.check_in)} → ${shortDay(b.check_out)}</span></button>`;
+  }).join("");
+  openSheet(`
+    <div class="sheet-head"><div><h3>${title}</h3>
+      <div class="sub">${esc(obj.title)}</div>
+      <div class="sub">${plural(ids.length, "ночь", "ночи", "ночей")} · занято ${busy} · закрыто ${blocked}</div></div>
+      <button class="x" data-close>×</button></div>
+    ${list}
+    ${blocked < ids.length ? `<button class="btn solid" id="do-block">Закрыть даты у нас · ${plural(ids.length, "ночь", "ночи", "ночей")}</button>
+      <div class="sub" style="margin-top:8px">На Авито и Суточно не уходит — закрываем только наш календарь.</div>` : `<div class="sub" style="margin-top:12px">Эти даты уже закрыты.</div>`}
+    ${pickB == null ? `<div class="sub" style="margin-top:8px">Нажмите второй день, чтобы выбрать период.</div>` : ""}
+    <button class="btn ghost" id="do-reset">Сбросить выбор</button>`);
+  $("sheet").querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => openBooking(Number(b.dataset.open))));
+  $("do-reset").onclick = () => { pickA = pickB = pickP = null; paintPick(); closeAll(); };
+  const btn = $("do-block");
+  if (btn) btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = "Закрываю…";
+    try {
+      const res = await api("/api/blocks", {
+        text: `закрой ${shortDay(first.date)}–${shortDay(last.date)}`,
+        property_id: pickP,
+      });
+      haptic(res.ok ? "ok" : "error");
+      pickA = pickB = pickP = null; closeAll();
+      if (res.ok) { await load(true); toast("Даты закрыты у нас"); } else toast(res.reason || "Не вышло");
+    } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
+  };
+}
+
+function openBooking(id) {
+  const b = D.bookings.find((x) => x.id === id);
+  if (!b) return;
+  haptic();
+  const flags = [];
+  if (b.conflict) flags.push("пересечение");
+  if (!b.paid) flags.push("нет оплаты");
+  if (!b.code_hint && b.stage !== "past") flags.push("код не выдан");
+  const hitl = flags.length
+    ? `<div style="margin:8px 0 2px">${flags.map((f) => `<span class="hitl">требует вас: ${f}</span>`).join("")}</div>` : "";
+  const conflictNote = b.conflict
+    ? `<div class="sub" style="margin-top:10px;color:var(--red)">Пересечение с другой бронью. Разбор — во вкладке «Уведомления».</div>` : "";
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>${esc(who(b))}</h3><div class="sub">${esc(shortCode(b.code))} · ${esc(b.platform_title)}</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    ${hitl}
+    ${(b.attention && b.attention.level === "human") ? `<div class="bcard attn">
+      <div class="v" style="font-weight:600">🟠 ${esc(b.attention.title)}</div>
+      ${(b.attention.why || []).map((w) => `<div class="rdy"><span class="bad">•</span>${esc(w)}</div>`).join("")}
+    </div>` : `<div class="rdy" style="margin:8px 0"><span class="ok">✓</span>${esc((b.attention || {}).title || "Всё по плану")}</div>`}
+    <div class="fact"><div class="k">Ближайшее событие</div>
+      <div class="v">${esc((b.next_event || {}).text || "")}</div></div>
+    <div class="fact"><div class="k">Откуда знаем про эти даты</div>
+      <div class="v">${sourceGroups(b).map((s) => `${esc(s.title)} — ${esc(s.kind)}`).join("<br>") || esc(b.platform_title)}</div></div>
+    <div class="fact"><div class="k">Подготовка</div><div class="v">
+      ${(b.readiness || []).map((r) => `<div class="rdy"><span class="${r.ok ? "ok" : "bad"}">${r.ok ? "✓" : "•"}</span><b>${esc(r.title)}</b> — ${esc(r.text)}</div>`).join("")}
+    </div></div>
+    <div class="facts">
+      <div><div class="k">Баланс</div><div class="v ${b.balance ? "minus" : ""}">${b.amount ? money(b.balance) + " ₽" : "—"}</div></div>
+      <div><div class="k">Итого</div><div class="v">${b.amount ? money(b.amount) + " ₽" : "нет данных"}</div></div>
+      <div><div class="k">Источник</div><div class="v">${esc(b.platform_title)}</div></div>
+    </div>
+    <div class="fact"><div class="k">Период проживания</div>
+      <div class="v">${dmy(b.check_in)} ${hhmm(b.check_in)} — ${dmy(b.check_out)} ${hhmm(b.check_out)} · ${plural(b.nights, "ночь", "ночи", "ночей")}</div></div>
+    <div class="fact"><div class="k">Статус</div><div class="v">${esc(b.status_title)}${b.paid ? "" : " · без оплаты"}</div></div>
+    <div class="fact"><div class="k">Объект</div>
+      <div class="v">${esc(objectOf(b.property_id).title)}<br><span class="sub">${esc(objectOf(b.property_id).address)}</span></div></div>
+    <div class="fact"><div class="k">Гостей</div><div class="v">${b.guests}</div></div>
+    ${conflictNote}
+    ${b.paid ? "" : `<button class="btn solid" id="b-paid">Отметить оплату</button>`}
+    <button class="btn" id="b-code">Выдать код калитки</button>
+    <button class="btn" id="b-out">Выезд и задача клинеру</button>
+    <button class="btn" id="b-outcome">Итог проживания</button>
+    <button class="btn ghost" data-close>Закрыть</button>`);
+  $("b-outcome").onclick = () => openOutcome(id);
+  const paid = $("b-paid");
+  if (paid) paid.onclick = async () => { await api(`/api/bookings/${id}/paid`, {}); haptic("ok"); closeAll(); await load(true); toast("Оплата отмечена"); };
+  $("b-code").onclick = async () => {
+    try {
+      const res = await api(`/api/bookings/${id}/code`, { text: "гость просит код калитки" });
+      haptic(res.ok ? "ok" : "error");
+      toast(res.ok ? `Код выдан, подсказка ${res.hint || "—"}` : res.reason || "Политика не даёт код");
+    } catch (e) { toast("Ошибка: " + e.message); }
+  };
+  $("b-out").onclick = async () => {
+    try { const res = await api(`/api/bookings/${id}/checkout`, {}); haptic("ok"); closeAll(); await load(true); toast(res.task ? "Задача клинеру поставлена" : "Выезд отмечен"); }
+    catch (e) { toast("Ошибка: " + e.message); }
+  };
+}
+
+function openBlock(id) {
+  const bl = (D.blocks || []).find((x) => x.id === id);
+  if (!bl) return;
+  openSheet(`
+    <div class="sheet-head"><div><h3>Закрыто у нас</h3>
+      <div class="sub">${dmy(bl.start)} — ${dmy(bl.end)}</div></div><button class="x" data-close>×</button></div>
+    <div class="fact"><div class="k">Причина</div><div class="v">${esc(bl.reason)}</div></div>
+    <div class="fact"><div class="k">Источник</div><div class="v">${esc(bl.source)}</div></div>
+    <div class="sub" style="margin-top:12px">Блок стоит только в нашем календаре, на площадки он не уходил.</div>
+    <button class="btn solid" id="bl-open">Открыть эти даты</button>
+    <button class="btn ghost" data-close>Закрыть</button>`);
+  $("bl-open").onclick = async () => {
+    try {
+      const res = await api("/api/blocks/" + id, { action: "open" });
+      haptic("ok"); closeAll(); await load(true); toast("Даты " + res.opened + " снова свободны");
+    } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
+  };
+}
+
+/* =================== БРОНИРОВАНИЯ =================== */
+
+function objLabel() {
+  const many = D.objects.length > 1;
+  $("obj-pick").classList.toggle("hidden", !many);
+  $("obj-pick").textContent = objFilter
+    ? shortTitle((D.objects.find((o) => o.id === objFilter) || {}).title || "Объект")
+    : `Объекты · ${D.objects.length}`;
+}
+
+function shortTitle(title) {
+  const t = String(title || "");
+  return t.length > 16 ? t.slice(0, 15) + "…" : t;
+}
+
+function objectOf(id) {
+  return (D.objects || []).find((o) => o.id === id) || D.objects[0] || { title: "", address: "" };
+}
+
+function shownObjects() {
+  return objFilter ? D.objects.filter((o) => o.id === objFilter) : D.objects;
+}
+
+function statusChip(b) {
+  if (b.conflict) return `<span class="schip red">пересечение</span>`;
+  if (!b.paid) return `<span class="schip amber">без оплаты</span>`;
+  if (b.stage === "staying") return `<span class="schip green">проживает</span>`;
+  if (b.stage === "past") return `<span class="schip gray">завершена</span>`;
+  return `<span class="schip blue">подтверждена</span>`;
+}
+
+function matchQuery(b, q) {
+  if (!q) return true;
+  const obj = objectOf(b.property_id);
+  return (b.guest_name || "").toLowerCase().includes(q) || b.code.toLowerCase().includes(q)
+    || b.platform_title.toLowerCase().includes(q) || shortDay(b.check_in).includes(q)
+    || (obj.title || "").toLowerCase().includes(q) || (obj.address || "").toLowerCase().includes(q);
+}
+
+function bookingCard(b) {
+  const att = b.attention || { level: "ok", title: "", why: [] };
+  const dot = att.level === "human" ? "\u{1F7E0}" : "\u{1F7E2}";
+  const sources = sourceTitles(b).join(" · ");
+  const rows = (b.readiness || []).map((r) =>
+    `<div class="rdy"><span class="${r.ok ? "ok" : "bad"}">${r.ok ? "\u2713" : "\u2022"}</span>
+      <b>${esc(r.title)}</b> \u2014 ${esc(r.text)}</div>`).join("");
+  // нулей не пишем: площадка могла не прислать сумму, а «0 ₽» читается как «бесплатно»
+  const money = b.busy ? "" : `<div class="rdy"><span class="ok">₽</span>${b.amount
+      ? ` Стоимость ${spaced(b.amount)} ₽${b.paid_amount ? ` · оплачено ${spaced(b.paid_amount)} ₽` : ""}`
+      : " Сумма — площадка её не прислала"}</div>`;
+
+  return `
+    <div class="bcard${att.level === "human" ? " attn" : ""}" data-card="${b.id}">
+      <div class="top">
+        <span class="v" style="font-weight:600">${esc(who(b))}${b.busy ? "" : ` \u00b7 ${b.guests} \u0433\u043e\u0441\u0442.`}</span>
+        ${statusChip(b)}
+      </div>
+      <div class="k" style="color:var(--hint);font-size:13px;margin-top:2px">
+        ${esc(sources || b.platform_title)} \u00b7 ${dmy(b.check_in)} \u2014 ${dmy(b.check_out)} \u00b7 ${plural(b.nights, "\u043d\u043e\u0447\u044c", "\u043d\u043e\u0447\u0438", "\u043d\u043e\u0447\u0435\u0439")}
+      </div>
+      <div class="v" style="margin-top:8px;font-weight:500">${esc((b.next_event || {}).text || "")}</div>
+      <div class="v" style="margin-top:6px">${dot} ${esc(att.title)}</div>
+      ${rows}
+      ${money}
+      <button class="btn" data-open="${b.id}">${att.level === "human" ? "\u0420\u0435\u0448\u0438\u0442\u044c \u0432\u043e\u043f\u0440\u043e\u0441" : "\u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435"}</button>
+    </div>`;
+}
+
+const spaced = (n) => (n == null ? "0" : String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0"));
+
+const FILTERS = [
+  { key: "active", title: "Текущие и ближайшие", color: "#2F80ED" },
+  { key: "attention", title: "Нужен человек", color: "#D94A41" },
+  { key: "staying", title: "Проживают", color: "#5FD0A4" },
+  { key: "archive", title: "Архив", color: "#97A6B8" },
+];
+
+function filterCount(key) {
+  return D.bookings.filter((b) => inFilter(b, key)).length;
+}
+
+function inFilter(b, key) {
+  if (key === "archive") return b.stage === "past";
+  if (key === "attention") return b.attention && b.attention.level === "human";
+  if (key === "staying") return b.stage === "staying";
+  return b.stage !== "past";          // «текущие и ближайшие» — по умолчанию
+}
+
+function applyFilter(list, key) {
+  return list.filter((b) => inFilter(b, key));
+}
+
+function renderBook() {
+  const chips = FILTERS.map((f) => `<button class="chip${bookFilter === f.key ? " on" : ""}" data-f="${f.key}">
+      <i style="background:${f.color}"></i>${f.title} <b>${filterCount(f.key)}</b></button>`).join("");
+  const q = query.trim().toLowerCase();
+  const list = applyFilter(D.bookings, bookFilter).filter((b) => matchQuery(b, q));
+  const cards = list.length ? list.map(bookingCard).join("") : `<div class="empty">Броней в этом фильтре нет</div>`;
+  const stats = statsOpen ? `
+    <div class="bcard">
+      <div class="facts">
+        <div><div class="k">Загрузка</div><div class="v">${D.month.occupancy}%</div></div>
+        <div><div class="k">Ночей занято</div><div class="v">${D.month.occupied} / ${D.month.days}</div></div>
+        <div><div class="k">Сумма броней</div><div class="v">${money(D.bookings.reduce((s, b) => s + b.amount, 0))} ₽</div></div>
+      </div>
+      <div class="fact"><div class="k">Площадки месяца</div>
+        <div class="v">${D.platforms.map((p) => `${esc(p.title)} ${p.nights_month}`).join(" · ")}</div></div>
+    </div>` : "";
+  $("s-book").innerHTML = `
+    <div class="crumb">‹ Главная</div>
+    <h1>Бронирования</h1>
+    <div class="sec-title"><h2>Статистика</h2><button class="link" id="stats-t">${statsOpen ? "Скрыть ⌃" : "Показать ⌄"}</button></div>
+    ${stats}
+    <div class="chips">${chips}</div>
+    <div class="searchbar">
+      <input id="bq" placeholder="Введите фамилию, номер брони" value="${esc(query)}" />
+      <button class="icon-btn bordered" id="bq-clear">⨯</button>
+    </div>
+    <div class="countline"><b>${plural(list.length, "бронирование", "бронирования", "бронирований")}</b><span style="color:var(--muted)">⋮</span></div>
+    ${cards}`;
+  $("stats-t").onclick = () => { statsOpen = !statsOpen; renderBook(); };
+  $("s-book").querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { bookFilter = b.dataset.f; renderBook(); }));
+  $("s-book").querySelectorAll("[data-open]").forEach((b) => (b.onclick = (e) => {
+    e.stopPropagation(); openBooking(Number(b.dataset.open));
+  }));
+  $("s-book").querySelectorAll("[data-card]").forEach((b) => (b.onclick = () => openBooking(Number(b.dataset.card))));
+  $("bq").oninput = (e) => {
+    query = e.target.value;
+    const pos = e.target.selectionStart;
+    renderBook();
+    const el = $("bq"); el.focus(); el.setSelectionRange(pos, pos);
+  };
+  $("bq-clear").onclick = () => { query = ""; renderBook(); };
+}
+
+/* =================== УВЕДОМЛЕНИЯ =================== */
+
+const ICONS = {
+  ticket: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="2.5" y="6.5" width="19" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 6.5v11M16 6.5v11" stroke="currentColor" stroke-width="1.5"/></svg>`,
+  wait: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="14" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 9h7M6.5 13h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  fire: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3s5 4 5 9a5 5 0 0 1-10 0c0-2 1-3 1-3s1 1.5 2 1.5S12 6 12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
+  inn: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 12h11m0 0-4-4m4 4-4 4M19 4v16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  out: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M20 12H9m0 0 4-4m-4 4 4 4M5 4v16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  card: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="2.5" y="5.5" width="19" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 10h19" stroke="currentColor" stroke-width="1.5"/></svg>`,
+  news: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 8h7M6.5 12h11M6.5 16h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+};
+
+function nrow(icon, title, sub, count, action) {
+  return `<button class="nrow" data-n="${action}">
+    <span class="ic">${ICONS[icon]}</span>
+    <span class="tt"><b>${title}</b><span>${sub}</span></span>
+    ${count ? `<span class="pill">+${count}</span>` : ""}
+  </button>`;
+}
+
+function renderNotify() {
+  const arriving = D.arriving.length, leaving = D.leaving.length;
+  const drafts = D.attention.drafts, conflicts = D.attention.conflicts, tasks = D.attention.tasks;
+  $("s-notify").innerHTML = `
+    <div class="page" style="padding-bottom:0"><div class="crumb">‹ Главная</div><h1 style="margin-bottom:6px">Уведомления</h1></div>
+    <div class="band"></div>
+    <div class="nlist">
+      ${nrow("ticket", "Черновики гостю", drafts ? plural(drafts, "ответ ждёт вас", "ответа ждут вас", "ответов ждут вас") : "Всё отвечено", drafts, "drafts")}
+      ${nrow("fire", "Пересечения броней", conflicts ? plural(conflicts, "конфликт", "конфликта", "конфликтов") : "Пересечений нет", conflicts, "conflicts")}
+      ${nrow("wait", "Задачи клинеру", tasks ? plural(tasks, "задача в работе", "задачи в работе", "задач в работе") : "Задач нет", tasks, "tasks")}
+      ${nrow("inn", "Ожидают заселения", arriving ? plural(arriving, "бронирование", "бронирования", "бронирований") : "Нет бронирований", arriving, "arriving")}
+      ${nrow("out", "Ожидают выселения", leaving ? plural(leaving, "бронирование", "бронирования", "бронирований") : "Нет бронирований", leaving, "leaving")}
+      ${nrow("card", "Оплаты", D.bookings.filter((b) => !b.paid).length ? plural(D.bookings.filter((b) => !b.paid).length, "бронь без оплаты", "брони без оплаты", "броней без оплаты") : "Все оплачены", D.bookings.filter((b) => !b.paid).length, "unpaid")}
+      ${nrow("news", "Синхронизация площадок", D.platforms.filter((p) => p.ical).length + " из " + D.platforms.length + " с iCal", 0, "sync")}
+    </div>
+    <div class="band" style="height:40px"></div>`;
+  $("s-notify").querySelectorAll("[data-n]").forEach((b) => (b.onclick = () => openNotify(b.dataset.n)));
+}
+
+function openNotify(kind) {
+  haptic();
+  if (kind === "drafts") { openChat(); return; }
+  if (kind === "sync") {
+    openSheet(`<div class="sheet-head"><div><h3>Каналы продаж</h3><div class="sub">На чём работает каждый канал</div></div><button class="x" data-close>×</button></div>
+      ${D.platforms.map((p) => `<div class="fact">
+        <div class="k">${esc(p.title)} · работает на: ${esc(p.how || (p.ical ? "iCal" : "не подключён"))}</div>
+        <div class="v">${p.nights_month} ноч. в месяце · ${p.stays} меток</div>
+        <div class="v" style="color:var(--hint);font-size:13px">
+          ${p.has_names ? "имя гостя приходит" : "имени гостя нет — iCal отдаёт только даты"}${p.api ? "" : " · API площадки нет"}
+        </div>
+        <div class="v" style="margin-top:6px">
+          ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">открыть объявление ↗</a>`
+                  : `<span style="color:var(--hint)">ссылка на объявление не задана</span>`}
+        </div>
+        <input class="inp" data-url="${esc(p.platform)}" placeholder="https://… ссылка на объявление" value="${esc(p.url || "")}">
+        <button class="btn" data-saveurl="${esc(p.platform)}">Сохранить ссылку</button>
+        </div>`).join("")}
+      <button class="btn solid" id="do-sync">Обновить календари</button>
+      <div class="sub" id="sync-out" style="margin-top:8px"></div>
+      <button class="btn ghost" data-close>Закрыть</button>`);
+    $("sheet").querySelectorAll("[data-saveurl]").forEach((b) => (b.onclick = async () => {
+      const platform = b.dataset.saveurl;
+      const url = $("sheet").querySelector(`[data-url="${platform}"]`).value.trim();
+      try {
+        await api("/api/listings/url", { platform, url });
+        haptic("ok"); await load(true); openNotify("sync"); toast("Ссылка сохранена");
+      } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
+    }));
+    $("do-sync").onclick = async () => {
+      $("sync-out").textContent = "Забираю…";
+      try {
+        const res = await api("/api/ical/sync", {});
+        $("sync-out").textContent = (res.listings || []).map((x) => `${x.platform}: ${x.ok ? x.count : "ошибка"}`).join(" · ") || "Нет ссылок";
+        await load(true);
+      } catch (e) { $("sync-out").textContent = "Ошибка: " + e.message; }
+    };
+    return;
+  }
+  if (kind === "conflicts") {
+    const items = D.conflicts.map((c) => `<div class="bcard"><div class="k" style="color:var(--hint);font-size:13px">Пересечение</div>
+      <div class="v" style="margin-top:4px">${esc(c.text)}</div>
+      <button class="btn ghost" data-dismiss="${c.id}">Это зеркало, закрыть карточку</button></div>`).join("") || `<div class="empty">Пересечений нет</div>`;
+    openSheet(`<div class="sheet-head"><div><h3>Пересечения броней</h3><div class="sub">Отмену на площадке делает человек</div></div><button class="x" data-close>×</button></div>${items}`);
+    $("sheet").querySelectorAll("[data-dismiss]").forEach((b) => (b.onclick = async () => {
+      await api("/api/conflicts/" + b.dataset.dismiss, { action: "dismiss" });
+      haptic("ok"); closeAll(); await load(true); toast("Карточка закрыта");
+    }));
+    return;
+  }
+  if (kind === "tasks") {
+    const items = D.tasks.map((t) => `<div class="bcard"><div class="v" style="font-weight:500">${esc(t.title)}</div>
+      <div class="k" style="color:var(--hint);font-size:13px;margin-top:4px">${esc(t.state)} · фото ${t.photo_count}/${t.photos_needed}</div>
+      <button class="btn ghost" data-task="${t.id}">Отметить выполненной</button></div>`).join("") || `<div class="empty">Задач нет</div>`;
+    openSheet(`<div class="sheet-head"><div><h3>Задачи клинеру</h3><div class="sub">Уборка после выезда</div></div><button class="x" data-close>×</button></div>${items}`);
+    $("sheet").querySelectorAll("[data-task]").forEach((b) => (b.onclick = async () => {
+      await api("/api/tasks/" + b.dataset.task, { action: "done", note: "с мини-аппа" });
+      haptic("ok"); closeAll(); await load(true); toast("Задача закрыта");
+    }));
+    return;
+  }
+  const map = {
+    arriving: ["Ожидают заселения", D.arriving],
+    leaving: ["Ожидают выселения", D.leaving],
+    unpaid: ["Без оплаты", D.bookings.filter((b) => !b.paid)],
+  };
+  const [title, list] = map[kind] || ["Бронирования", []];
+  const rows = list.map((s) => {
+    const b = D.bookings.find((x) => x.id === s.id) || s;
+    return `<button class="btn ghost" style="text-align:left;height:auto;padding:12px 14px" data-open="${b.id}">
+      <b style="font-weight:600">${esc(who(b))}</b><br>
+      <span style="color:var(--hint);font-size:13px">${esc(b.platform_title || "")} · ${shortDay(b.check_in)} → ${shortDay(b.check_out)}</span></button>`;
+  }).join("") || `<div class="empty">Пусто</div>`;
+  openSheet(`<div class="sheet-head"><div><h3>${title}</h3><div class="sub">${dmy(TODAY + "T00:00")}</div></div><button class="x" data-close>×</button></div>${rows}`);
+  $("sheet").querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => openBooking(Number(b.dataset.open))));
+}
+
+/* =================== ПОИСК =================== */
+
+function renderSearch() {
+  const q = query.trim().toLowerCase();
+  const found = q ? D.bookings.filter((b) => matchQuery(b, q)) : [];
+  $("s-search").innerHTML = `
+    <h1>Поиск</h1>
+    <div class="searchbar"><input id="sq" placeholder="Фамилия, номер брони, площадка" value="${esc(query)}" /></div>
+    ${q ? `<div class="countline"><b>${plural(found.length, "бронирование", "бронирования", "бронирований")}</b></div>` : `<div class="empty">Ищу по гостю, номеру брони, площадке и дате заезда.</div>`}
+    ${found.map(bookingCard).join("")}`;
+  $("sq").oninput = (e) => {
+    query = e.target.value;
+    const pos = e.target.selectionStart;
+    renderSearch();
+    const el = $("sq"); el.focus(); el.setSelectionRange(pos, pos);
+  };
+  $("s-search").querySelectorAll("[data-card]").forEach((b) => (b.onclick = () => openBooking(Number(b.dataset.card))));
+}
+
+/* =================== ЧАТ С ГОСТЕМ =================== */
+
+let chatDraft = null;
+
+function openChat() {
+  renderChat();
+  $("chat").classList.add("on");
+}
+function closeChat() { $("chat").classList.remove("on"); chatDraft = null; }
+
+function renderChat() {
+  if (chatDraft == null) {
+    const rows = D.drafts.map((d) => `<button class="nrow" data-d="${d.id}">
+      <span class="ic">${ICONS.ticket}</span>
+      <span class="tt"><b>${esc((d.guest_text || "").slice(0, 34))}</b><span>${esc(d.question_class)}${d.matched_faq ? " · " + esc(d.matched_faq) : ""}</span></span>
+      <span class="pill">1</span></button>`).join("") || `<div class="empty" style="padding:20px">Новых вопросов нет</div>`;
+    $("chat").innerHTML = `
+      <div class="chat-head"><h3>Чат с гостем</h3><button class="x" id="chat-x">×</button></div>
+      <div class="nlist" style="overflow:auto">${rows}</div>`;
+    $("chat-x").onclick = closeChat;
+    $("chat").querySelectorAll("[data-d]").forEach((b) => (b.onclick = () => { chatDraft = Number(b.dataset.d); renderChat(); }));
+    return;
+  }
+  const d = D.drafts.find((x) => x.id === chatDraft);
+  if (!d) { chatDraft = null; renderChat(); return; }
+  const t = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  $("chat").innerHTML = `
+    <div class="chat-head"><h3>Чат с гостем</h3><button class="x" id="chat-x">×</button></div>
+    <div class="chat-sub"><button class="x" id="chat-back">«</button><b>Гость</b>
+      <span class="schip amber">${esc(d.question_class)}</span></div>
+    <div class="chat-body">
+      <div class="chat-day">Диалог начался: ${new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })} г.</div>
+      <div class="msg in">${esc(d.guest_text)}<span class="t">${t}</span></div>
+      <div class="msg draft">${esc(d.draft_text)}<span class="t">черновик · ${t}</span></div>
+      <button class="btn solid" id="d-send" style="align-self:flex-end;width:auto;padding:0 18px">Отправить как есть</button>
+      <button class="btn ghost" id="d-self" style="align-self:flex-end;width:auto;padding:0 18px">Отвечу сама</button>
+    </div>
+    <div class="chat-foot">
+      <input id="d-text" placeholder="Поправить ответ" />
+      <button class="send" id="d-edit">➤</button>
+    </div>`;
+  $("chat-x").onclick = closeChat;
+  $("chat-back").onclick = () => { chatDraft = null; renderChat(); };
+  const act = async (action, text) => {
+    try {
+      await api("/api/drafts/" + d.id, { action, text: text || null });
+      haptic("ok"); chatDraft = null; await load(true); renderChat();
+      toast(action === "send" ? "Ответ ушёл гостю" : action === "edit" ? "Правка отправлена" : "Оставила вам");
+    } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
+  };
+  $("d-send").onclick = () => act("send");
+  $("d-self").onclick = () => act("self");
+  $("d-edit").onclick = () => { const v = $("d-text").value.trim(); if (v) act("edit", v); };
+}
+
+
+/* =================== ИТОГ ПРОЖИВАНИЯ =================== */
+
+const OUT_REVIEW = [["none", "не спрашивали"], ["asked", "попросили"], ["received", "получен"], ["refused", "отказался"]];
+const OUT_RECEIPT = [["none", "не оформлен"], ["issued", "оформлен"], ["not_needed", "не нужен"]];
+const OUT_DEPOSIT = [["none", "не брали"], ["held", "у нас"], ["returned", "возвращён"], ["withheld", "удержан"]];
+const OUT_CONFLICT = [["none", "без конфликта"], ["guest", "со стороны гостя"], ["client", "со стороны заказчика"], ["both", "с обеих сторон"]];
+
+function pickRow(id, title, options, value) {
+  const opts = options.map(([v, t]) => `<option value="${v}"${v === value ? " selected" : ""}>${t}</option>`).join("");
+  return `<div class="fact"><div class="k">${title}</div>
+    <select id="${id}" class="inp">${opts}</select></div>`;
+}
+
+async function openOutcome(id) {
+  haptic();
+  let data;
+  try { data = await api(`/api/bookings/${id}/outcome`); }
+  catch (e) { toast("Не открылось: " + e.message); return; }
+  const o = data.outcome;
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>Итог проживания</h3><div class="sub">${esc(data.booking.guest_name)} · выезд ${dmy(data.booking.check_out)}</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    ${pickRow("o-review", "Отзыв", OUT_REVIEW, o.review_status)}
+    <input class="inp" id="o-review-note" placeholder="ссылка на отзыв или оценка" value="${esc(o.review_note)}">
+    ${pickRow("o-receipt", "Чек", OUT_RECEIPT, o.receipt_status)}
+    <input class="inp" id="o-receipt-note" placeholder="номер чека или комментарий" value="${esc(o.receipt_note)}">
+    ${pickRow("o-deposit", "Залог", OUT_DEPOSIT, o.deposit_status)}
+    <div class="facts">
+      <div><div class="k">Взяли, ₽</div><input class="inp" id="o-dep-took" inputmode="numeric" value="${Math.round(o.deposit_amount_cents / 100)}"></div>
+      <div><div class="k">Вернули, ₽</div><input class="inp" id="o-dep-back" inputmode="numeric" value="${Math.round(o.deposit_returned_cents / 100)}"></div>
+    </div>
+    <input class="inp" id="o-dep-why" placeholder="за что удержали" value="${esc(o.deposit_reason)}">
+    ${pickRow("o-conflict", "Конфликт", OUT_CONFLICT, o.conflict_side)}
+    <textarea class="inp" id="o-conf-note" rows="2" placeholder="что произошло">${esc(o.conflict_note)}</textarea>
+    <textarea class="inp" id="o-conf-fix" rows="2" placeholder="как урегулировали">${esc(o.conflict_resolution)}</textarea>
+    <button class="btn solid" id="o-save">Сохранить</button>
+    <button class="btn ghost" data-close>Закрыть</button>`);
+
+  $("o-save").onclick = async () => {
+    const body = {
+      review_status: $("o-review").value,
+      review_note: $("o-review-note").value.trim(),
+      receipt_status: $("o-receipt").value,
+      receipt_note: $("o-receipt-note").value.trim(),
+      deposit_status: $("o-deposit").value,
+      deposit_amount_cents: Math.round(Number($("o-dep-took").value || 0) * 100),
+      deposit_returned_cents: Math.round(Number($("o-dep-back").value || 0) * 100),
+      deposit_reason: $("o-dep-why").value.trim(),
+      conflict_side: $("o-conflict").value,
+      conflict_note: $("o-conf-note").value.trim(),
+      conflict_resolution: $("o-conf-fix").value.trim(),
+    };
+    try {
+      const res = await api(`/api/bookings/${id}/outcome`, body);
+      haptic("ok"); closeAll(); toast(res.summary || "Итог сохранён");
+    } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
+  };
+}
+
+/* =================== РЕГИСТРАЦИЯ ГОСТЕЙ В МВД =================== */
+
+async function openRegistrations() {
+  haptic();
+  let data;
+  try { data = await api("/api/registrations"); }
+  catch (e) { toast("Не открылось: " + e.message); return; }
+
+  const cards = data.bookings.map((b) => {
+    const guests = b.registrations.map((g) => `
+      <div class="fact"><div class="k">${esc(g.full_name)}${g.citizenship ? " · " + esc(g.citizenship) : ""}</div>
+        <div class="v">${esc(g.status_title)}
+          ${g.status === "to_do" ? `<button class="chip" data-reg="${g.id}" data-st="submitted">подано</button>` : ""}
+          ${g.status === "submitted" ? `<button class="chip" data-reg="${g.id}" data-st="confirmed">подтверждено</button>` : ""}
+          <button class="chip" data-del="${g.id}">убрать</button>
+        </div></div>`).join("");
+    return `<div class="bcard${b.pending ? " attn" : ""}">
+      <div class="v" style="font-weight:500">${esc(b.guest_name)}</div>
+      <div class="k" style="color:var(--hint);font-size:13px;margin-top:2px">
+        ${dmy(b.check_in)} — ${dmy(b.check_out)} · гостей ${b.guests_count}</div>
+      ${guests || `<div class="sub" style="margin-top:6px">Никто не внесён</div>`}
+      <input class="inp" data-name="${b.booking_id}" placeholder="ФИО гостя">
+      <div class="facts">
+        <div><input class="inp" data-birth="${b.booking_id}" placeholder="дата рождения"></div>
+        <div><input class="inp" data-cit="${b.booking_id}" placeholder="гражданство" value="РФ"></div>
+      </div>
+      <button class="btn" data-add="${b.booking_id}">Добавить гостя</button>
+    </div>`;
+  }).join("") || `<div class="empty">Броней нет</div>`;
+
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>Регистрация гостей в МВД</h3>
+        <div class="sub">Требуют внимания: ${data.need_attention}</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    <div class="sub" style="margin-bottom:10px">Подачу делает внешний сервис или вы сами.
+      Здесь только учёт: кто, когда и в каком статусе. Номера документов и сканы не храним.</div>
+    ${cards}
+    <button class="btn ghost" data-close>Закрыть</button>`);
+
+  $("sheet").querySelectorAll("[data-add]").forEach((btn) => (btn.onclick = async () => {
+    const bid = btn.dataset.add;
+    const name = $("sheet").querySelector(`[data-name="${bid}"]`).value.trim();
+    if (!name) { toast("Нужно имя гостя"); return; }
+    const birth = $("sheet").querySelector(`[data-birth="${bid}"]`).value.trim();
+    const cit = $("sheet").querySelector(`[data-cit="${bid}"]`).value.trim();
+    try {
+      await api(`/api/bookings/${bid}/registrations`, { full_name: name, birth_date: birth, citizenship: cit });
+      haptic("ok"); await openRegistrations(); toast("Гость внесён");
+    } catch (e) { toast("Ошибка: " + e.message); }
+  }));
+  $("sheet").querySelectorAll("[data-reg]").forEach((btn) => (btn.onclick = async () => {
+    await api("/api/registrations/" + btn.dataset.reg, { action: "status", status: btn.dataset.st });
+    haptic("ok"); await openRegistrations();
+  }));
+  $("sheet").querySelectorAll("[data-del]").forEach((btn) => (btn.onclick = async () => {
+    await api("/api/registrations/" + btn.dataset.del, { action: "delete" });
+    haptic("ok"); await openRegistrations();
+  }));
+}
+
+/* =================== ОТЧЁТ ТУРНАЛОГА =================== */
+
+let taxYear = null, taxMonth = null;
+
+async function openTouristTax(shift) {
+  haptic();
+  const now = new Date();
+  if (taxYear === null) { taxYear = now.getFullYear(); taxMonth = now.getMonth() + 1; }
+  if (shift) {
+    taxMonth += shift;
+    if (taxMonth < 1) { taxMonth = 12; taxYear -= 1; }
+    if (taxMonth > 12) { taxMonth = 1; taxYear += 1; }
+  }
+  let data;
+  try { data = await api(`/api/tourist-tax?year=${taxYear}&month=${taxMonth}`); }
+  catch (e) { toast("Не открылось: " + e.message); return; }
+
+  const rows = data.rows.map((r) => `<div class="fact">
+      <div class="k">${esc(r.guest_name)} · ${dmy(r.check_in)}—${dmy(r.check_out)}</div>
+      <div class="v">${r.nights_in_month} ноч. · база ${money(r.base_rub)} ₽ · налог ${money(r.tax_rub)} ₽${r.by_minimum ? " (по минимуму)" : ""}</div>
+    </div>`).join("") || `<div class="empty">В этом месяце ночей не было</div>`;
+
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>Отчёт турналога</h3><div class="sub">${MONTHS[data.month - 1]} ${data.year}</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    <div class="facts">
+      <div><div class="k">Ночей</div><div class="v">${data.totals.nights}</div></div>
+      <div><div class="k">База</div><div class="v">${money(data.totals.base_rub)} ₽</div></div>
+      <div><div class="k">Налог</div><div class="v">${money(data.totals.tax_rub)} ₽</div></div>
+    </div>
+    <div class="sub" style="margin:6px 0 10px">Ставка ${data.percent}% от стоимости, но не менее ${data.min_rub_per_night} ₽ за сутки.
+      Меняется в настройках сервера. Применим ли налог к вашему объекту — вопрос к бухгалтеру.</div>
+    <div class="facts">
+      <div><button class="btn" id="tax-prev">← месяц назад</button></div>
+      <div><button class="btn" id="tax-next">месяц вперёд →</button></div>
+    </div>
+    ${rows}
+    <button class="btn ghost" data-close>Закрыть</button>`);
+  $("tax-prev").onclick = () => openTouristTax(-1);
+  $("tax-next").onclick = () => openTouristTax(1);
+}
+
+
+/* =================== ОТВЕТЫ ГОСТЯМ =================== */
+
+const ANS_STATE = {
+  own: ["свой ответ", "var(--green, #2E9E6B)"],
+  template: ["по шаблону", "var(--hint)"],
+  gap: ["не хватает фактов", "var(--amber)"],
+  off: ["выключено", "var(--muted)"],
+};
+
+async function openAnswers() {
+  haptic();
+  let data;
+  try { data = await api("/api/answers"); }
+  catch (e) { toast("Не открылось: " + e.message); return; }
+
+  const s = data.summary;
+  const gapsFacts = data.onboarding.filter((f) => !f.value);
+
+  const list = data.rows.map((r) => {
+    const [label, color] = ANS_STATE[r.state];
+    return `<div class="bcard${r.state === "gap" ? " attn" : ""}">
+      <div class="top">
+        <span class="v" style="font-weight:500">${esc(r.title)}</span>
+        <span class="k" style="color:${color};font-size:12px">${label}</span>
+      </div>
+      <div class="k" style="color:var(--hint);font-size:13px;margin-top:4px">${esc(r.text || "ответа нет")}</div>
+      ${r.missing.length ? `<div class="k" style="color:var(--amber);font-size:12px;margin-top:4px">
+        не заполнено: ${r.missing.map(esc).join(", ")}</div>` : ""}
+      <button class="btn" data-edit="${esc(r.code)}">${r.state === "own" ? "Изменить" : "Написать свой"}</button>
+      ${r.custom ? `<button class="btn ghost" data-drop="${r.id}">Убрать ситуацию</button>` : ""}
+    </div>`;
+  }).join("");
+
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>Ответы гостям</h3>
+        <div class="sub">${esc(data.property.title)}</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    <div class="facts">
+      <div><div class="k">Свои</div><div class="v">${s.own}</div></div>
+      <div><div class="k">По шаблону</div><div class="v">${s.template}</div></div>
+      <div><div class="k">Дыры</div><div class="v" style="color:${s.gaps ? "var(--amber)" : "inherit"}">${s.gaps}</div></div>
+    </div>
+    ${gapsFacts.length ? `<div class="bcard attn">
+      <div class="v" style="font-weight:500">Не заполнено ${gapsFacts.length} фактов об объекте</div>
+      <div class="k" style="color:var(--hint);font-size:13px;margin-top:4px">
+        Пока их нет, часть ситуаций бот отдаёт вам вместо ответа.</div>
+      <button class="btn solid" id="a-wizard">Заполнить об объекте</button>
+    </div>` : ""}
+    <button class="btn solid" id="a-try">Проверить ответ</button>
+    <button class="btn" id="a-add">Добавить свою ситуацию</button>
+    ${list}
+    <button class="btn ghost" data-close>Закрыть</button>`);
+
+  $("a-try").onclick = openAnswerTry;
+  $("a-add").onclick = openAnswerCustom;
+  if ($("a-wizard")) $("a-wizard").onclick = () => openAnswerWizard(data.onboarding);
+  $("sheet").querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => {
+    const row = data.rows.find((r) => r.code === b.dataset.edit);
+    openAnswerEdit(row);
+  }));
+  $("sheet").querySelectorAll("[data-drop]").forEach((b) => (b.onclick = async () => {
+    await api(`/api/answers/${b.dataset.drop}/delete`, {});
+    haptic("ok"); await openAnswers(); toast("Ситуация убрана");
+  }));
+}
+
+function openAnswerEdit(row) {
+  if (!row) return;
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>${esc(row.title)}</h3><div class="sub">что увидит гость</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    ${row.template ? `<div class="fact"><div class="k">Шаблон библиотеки</div>
+      <div class="v" style="font-size:13px;color:var(--hint)">${esc(row.template)}</div></div>` : ""}
+    <textarea class="inp" id="a-text" rows="5" placeholder="Ответ гостю">${esc(row.text)}</textarea>
+    <button class="btn solid" id="a-save">Сохранить</button>
+    ${row.custom ? "" : `<button class="btn" id="a-reset">Вернуть шаблон</button>`}
+    <button class="btn ghost" data-close>Отмена</button>`);
+
+  $("a-save").onclick = async () => {
+    const text = $("a-text").value.trim();
+    if (!text) { toast("Пустой ответ не сохраняю"); return; }
+    try {
+      await api("/api/answers", { code: row.custom ? row.code : row.code, text });
+      haptic("ok"); await openAnswers(); toast("Сохранила");
+    } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
+  };
+  if ($("a-reset")) $("a-reset").onclick = async () => {
+    await api("/api/answers", { code: row.code, text: "" });
+    haptic("ok"); await openAnswers(); toast("Вернула шаблон");
+  };
+}
+
+function openAnswerCustom() {
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>Своя ситуация</h3><div class="sub">то, чего нет в библиотеке</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    <input class="inp" id="c-title" placeholder="Название, например «Собака во дворе»">
+    <input class="inp" id="c-words" placeholder="Слова-приметы через запятую: собака, лает, двор">
+    <textarea class="inp" id="c-text" rows="4" placeholder="Что ответить гостю"></textarea>
+    <div class="sub">Слова-приметы — то, по чему бот узнает вопрос в сообщении гостя.</div>
+    <button class="btn solid" id="c-save">Добавить</button>
+    <button class="btn ghost" data-close>Отмена</button>`);
+
+  $("c-save").onclick = async () => {
+    const title = $("c-title").value.trim();
+    const text = $("c-text").value.trim();
+    const keywords = $("c-words").value.split(",").map((w) => w.trim()).filter(Boolean);
+    if (!title || !text || !keywords.length) { toast("Нужны название, слова-приметы и ответ"); return; }
+    try {
+      await api("/api/answers/custom", { title, text, keywords });
+      haptic("ok"); await openAnswers(); toast("Ситуация добавлена");
+    } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
+  };
+}
+
+function openAnswerTry() {
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>Проверить ответ</h3><div class="sub">ничего не отправляется гостю</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    <textarea class="inp" id="t-text" rows="3" placeholder="Вопрос гостя, как он его пишет"></textarea>
+    <button class="btn solid" id="t-go">Показать ответ</button>
+    <div id="t-out"></div>
+    <button class="btn ghost" data-close>Закрыть</button>`);
+
+  $("t-go").onclick = async () => {
+    const text = $("t-text").value.trim();
+    if (!text) return;
+    $("t-out").innerHTML = `<div class="sub" style="margin-top:10px">Думаю…</div>`;
+    try {
+      const res = await api("/api/answers/try", { text });
+      const m = res.matched;
+      const mode = { auto: "отправит сам", confirm: "спросит вас", never: "только вы" }[res.policy_mode] || res.policy_mode;
+      $("t-out").innerHTML = `
+        <div class="fact"><div class="k">Сработала ситуация</div>
+          <div class="v">${m ? esc(m.title) : "ничего не подошло — отдаст вам"}
+            ${m ? `<span class="k" style="color:var(--hint)">· ${m.source === "own" ? "ваш текст" : "шаблон"}</span>` : ""}</div></div>
+        <div class="fact"><div class="k">Класс вопроса · политика</div>
+          <div class="v">${esc(res.question_class)} · ${esc(mode)}</div></div>
+        <div class="fact"><div class="k">Текст гостю</div><div class="v">${esc(res.draft)}</div></div>`;
+      haptic("ok");
+    } catch (e) { $("t-out").innerHTML = `<div class="sub" style="color:var(--red)">Ошибка: ${esc(e.message)}</div>`; }
+  };
+}
+
+function openAnswerWizard(fields) {
+  const rows = fields.map((f) => `
+    <div class="fact"><div class="k">${esc(f.title)}</div>
+      <div class="sub" style="font-size:12px">${esc(f.hint)}</div>
+      <textarea class="inp" data-fact="${esc(f.key)}" rows="2">${esc(f.value)}</textarea></div>`).join("");
+
+  openSheet(`
+    <div class="sheet-head">
+      <div><h3>Об объекте</h3><div class="sub">из этого живут ответы гостям</div></div>
+      <button class="x" data-close>×</button>
+    </div>
+    <div class="sub" style="margin-bottom:10px">Заполните то, что знаете. Чего нет — бот не выдумает,
+      а передаст вопрос вам.</div>
+    ${rows}
+    <button class="btn solid" id="w-save">Сохранить</button>
+    <button class="btn ghost" data-close>Закрыть</button>`);
+
+  $("w-save").onclick = async () => {
+    const facts = {};
+    $("sheet").querySelectorAll("[data-fact]").forEach((el) => { facts[el.dataset.fact] = el.value.trim(); });
+    try {
+      const res = await api("/api/answers/facts", { facts });
+      haptic("ok"); await openAnswers();
+      toast(res.summary.gaps ? `Осталось дыр: ${res.summary.gaps}` : "Все ситуации закрыты");
+    } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
+  };
+}
+
+/* =================== МЕНЮ =================== */
+
+function renderDrawer() {
+  $("drawer").innerHTML = `
+    <div class="dhead"><b>${esc(D ? D.property.title : "KaVa")}</b>
+      <small>${esc(D ? D.property.address : "")}</small>
+      <small style="opacity:.6">версия __APP_BUILD__</small></div>
+    <h4>Гости и общение</h4>
+    <button class="mi" data-go="answers">Ответы гостям<span class="tag">new</span></button>
+    <h4>Размещение гостей</h4>
+    <button class="mi on" data-go="grid">Шахматка</button>
+    <button class="mi" data-go="book">Бронирования</button>
+    <button class="mi" data-go="objects">Объекты<small>переключить или добавить</small></button>
+    <button class="mi" data-go="tasks">Задачи клинеру</button>
+    <button class="mi" data-go="mvd">Регистрация гостей в МВД<span class="tag">new</span></button>
+    <button class="mi off" disabled>Электронные замки</button>
+    <h4>Управление продажами</h4>
+    <button class="mi" data-go="sync">Каналы продаж (OTA)<small>Авито, Суточно, Островок, Яндекс</small></button>
+    <button class="mi" data-go="block">Закрытые даты</button>
+    <button class="mi off" disabled>Тарифы</button>
+    <button class="mi off" disabled>Промокоды</button>
+    <h4>Отчёты</h4>
+    <button class="mi" data-go="stats">Загрузка и ночи<span class="tag">new</span></button>
+    <button class="mi" data-go="conflicts">Пересечения броней</button>
+    <button class="mi" data-go="tax">Отчёт турналога<span class="tag">new</span></button>`;
+  $("drawer").querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => {
+    const go = b.dataset.go;
+    closeAll();
+    if (go === "grid" || go === "book") show(go);
+    else if (go === "objects") openObjects();
+    else if (go === "stats") { statsOpen = true; show("book"); renderBook(); }
+    else if (go === "block") { show("grid"); toast("Выберите даты в шахматке"); }
+    else if (go === "answers") openAnswers();
+    else if (go === "mvd") openRegistrations();
+    else if (go === "tax") openTouristTax(0);
+    else openNotify(go === "sync" ? "sync" : go);
+  }));
+}
+
+/* =================== НАВИГАЦИЯ =================== */
+
+function show(name) {
+  tab = name;
+  ["grid", "book", "notify", "search"].forEach((t) => $("s-" + t).classList.toggle("hidden", t !== name));
+  document.querySelectorAll(".tabbar [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+  window.scrollTo(0, 0);
+}
+
+document.querySelectorAll(".tabbar [data-tab]").forEach((b) => (b.onclick = () => { haptic(); show(b.dataset.tab); }));
+
+$("fab").onclick = () => {
+  haptic();
+  openSheet(`
+    <div class="sheet-head"><div><h3>Что сделать</h3><div class="sub">${esc(D ? D.property.title : "")}</div></div><button class="x" data-close>×</button></div>
+    <button class="btn solid" id="a-obj">Добавить объект</button>
+    <button class="btn" id="a-block">Закрыть даты у нас</button>
+    <button class="btn" id="a-sync">Обновить календари площадок</button>
+    <button class="btn" id="a-chat">Ответить гостю${D && D.attention.drafts ? " · " + D.attention.drafts : ""}</button>
+    <div class="sub" style="margin-top:10px">Новая бронь заводится письмом с площадки — парсер разберёт его сам.</div>
+    <button class="btn ghost" data-close>Отмена</button>`);
+  $("a-obj").onclick = () => { closeAll(); openAddObject(); };
+  $("a-block").onclick = () => { closeAll(); show("grid"); toast("Нажмите день начала, потом день конца"); };
+  $("a-sync").onclick = () => { closeAll(); openNotify("sync"); };
+  $("a-chat").onclick = () => { closeAll(); openChat(); };
+};
+
+function openObjects() {
+  const head = D.objects.length > 1
+    ? [{ id: null, title: `Все объекты (${D.objects.length})`, address: "" }] : [];
+  const rows = head.concat(D.objects)
+    .map((o) => `<button class="btn ghost" style="text-align:left;height:auto;padding:12px 14px"
+        data-obj="${o.id == null ? "" : o.id}">
+      <b style="font-weight:600;color:var(--ink)">${esc(o.title)}</b>
+      ${o.address ? `<br><span style="color:var(--hint);font-size:13px">${esc(o.address)} · загрузка ${o.occupancy}%</span>` : ""}
+    </button>`).join("");
+  openSheet(`<div class="sheet-head"><div><h3>Объекты</h3>
+      <div class="sub">${plural(D.objects.length, "объект", "объекта", "объектов")} в работе</div></div>
+      <button class="x" data-close>×</button></div>
+    ${rows}
+    <button class="btn solid" id="obj-add">+ Добавить объект</button>`);
+  $("sheet").querySelectorAll("[data-obj]").forEach((b) => (b.onclick = () => {
+    objFilter = b.dataset.obj ? Number(b.dataset.obj) : null;
+    pickA = pickB = pickP = null;
+    closeAll();
+    renderGrid();
+    objLabel();
+  }));
+  $("obj-add").onclick = openAddObject;
+}
+
+function openAddObject() {
+  haptic();
+  const city = (D.objects[0] || {}).city || "";
+  openSheet(`
+    <div class="sheet-head"><div><h3>Новый объект</h3>
+      <div class="sub">Появится в шахматке сразу, площадки подключите потом</div></div>
+      <button class="x" data-close>×</button></div>
+    <div class="field"><label>Название</label>
+      <input id="f-title" placeholder="Студия на Курортном" autocomplete="off" /></div>
+    <div class="field"><label>Адрес</label>
+      <input id="f-addr" placeholder="Курортный просп., 12, кв. 4" autocomplete="off" /></div>
+    <div class="field"><label>Город</label>
+      <input id="f-city" value="${esc(city)}" autocomplete="off" /></div>
+    <div class="row3">
+      <div class="field"><label>Заезд с</label><input id="f-in" value="14:00" /></div>
+      <div class="field"><label>Выезд до</label><input id="f-out" value="12:00" /></div>
+      <div class="field"><label>Гостей</label><input id="f-guests" value="4" inputmode="numeric" /></div>
+    </div>
+    <button class="btn solid" id="f-save">Добавить объект</button>
+    <div class="sub" style="margin-top:8px">
+      База знаний нового объекта пустая: пока не заполните факты и ссылки iCal,
+      Помогайка не сможет отвечать гостю по этому адресу.</div>
+    <button class="btn ghost" data-close>Отмена</button>`);
+  $("f-save").onclick = async () => {
+    const title = $("f-title").value.trim();
+    if (!title) { toast("Без названия не добавлю"); $("f-title").focus(); return; }
+    const btn = $("f-save");
+    btn.disabled = true; btn.textContent = "Добавляю…";
+    try {
+      const res = await api("/api/properties", {
+        title,
+        address: $("f-addr").value.trim(),
+        city: $("f-city").value.trim(),
+        check_in_from: $("f-in").value.trim() || "14:00",
+        check_out_until: $("f-out").value.trim() || "12:00",
+        max_guests: Number($("f-guests").value) || 4,
+      });
+      haptic("ok");
+      closeAll();
+      await load();
+      show("grid");
+      toast(`Объект «${res.property.title}» добавлен`);
+    } catch (err) {
+      haptic("error");
+      btn.disabled = false; btn.textContent = "Добавить объект";
+      toast("Не вышло: " + err.message);
+    }
+  };
+}
+
+$("obj-pick").onclick = () => { haptic(); openObjects(); };
+
+$("burger").onclick = () => { haptic(); renderDrawer(); $("drawer").classList.add("on"); $("backdrop").classList.add("on"); };
+$("chat-open").onclick = () => { haptic(); openChat(); };
+
+$("sc-day").onclick = () => { scale = "day"; $("sc-day").classList.add("on"); $("sc-month").classList.remove("on"); renderGrid(); scrollToToday(); };
+$("sc-month").onclick = () => { scale = "month"; $("sc-month").classList.add("on"); $("sc-day").classList.remove("on"); renderGrid(); };
+
+$("prev").onclick = async () => { pickA = pickB = pickP = null; month--; if (month < 1) { month = 12; year--; } await load(); $("tl").scrollLeft = 0; };
+$("next").onclick = async () => { pickA = pickB = pickP = null; month++; if (month > 12) { month = 1; year++; } await load(); $("tl").scrollLeft = 0; };
+$("go-today").onclick = async () => {
+  const d = new Date();
+  if (d.getFullYear() !== year || d.getMonth() + 1 !== month) { year = d.getFullYear(); month = d.getMonth() + 1; await load(); }
+  show("grid"); scrollToToday();
+};
+$("more").onclick = () => {
+  openSheet(`<div class="sheet-head"><div><h3>Шахматка</h3><div class="sub">${MONTHS[month - 1]} ${year}</div></div><button class="x" data-close>×</button></div>
+    <div class="facts">
+      <div><div class="k">Загрузка</div><div class="v">${D.month.occupancy}%</div></div>
+      <div><div class="k">Занято ночей</div><div class="v">${D.month.occupied}/${D.month.days}</div></div>
+      <div><div class="k">Броней</div><div class="v">${D.bookings.length}</div></div>
+    </div>
+    <button class="btn" id="m-sync">Обновить календари</button>
+    <button class="btn ghost" data-close>Закрыть</button>`);
+  $("m-sync").onclick = () => { closeAll(); openNotify("sync"); };
+};
+
+function scrollToToday() {
+  const d = new Date();
+  if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return;
+  $("tl").scrollLeft = Math.max(0, (d.getDate() - 2) * cw());
+}
+
+function fromHash() {
+  const h = (location.hash || "").replace("#", "");
+  return ["grid", "book", "notify", "search"].includes(h) ? h : "grid";
+}
+window.addEventListener("hashchange", () => show(fromHash()));
+
+
+load().then(() => { const t = fromHash(); if (t !== "grid") show(t); else scrollToToday(); });
+</script>
+</body>
+</html>
