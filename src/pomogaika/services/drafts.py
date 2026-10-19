@@ -6,6 +6,7 @@ from pomogaika.db import SessionLocal
 from pomogaika.models import MessageDraft, Property
 from pomogaika.services.copilot import CopilotResult, booking_label, classify_and_draft
 from pomogaika.services.guest import bind_guest, match_booking
+from pomogaika.services.nudges import capture_eta
 from pomogaika.services.guest_links import is_greeting_only, resolve_code, welcome_text
 from pomogaika.services.seed import audit, emit
 from sqlalchemy.orm import Session
@@ -70,6 +71,35 @@ def create_guest_draft(
     )
     if booking:
         bind_guest(booking, guest_user_id, guest_chat_id, business_connection_id)
+    if booking is not None and booking.awaiting:
+        said = capture_eta(session, booking, text)
+        if said:
+            result = CopilotResult(
+                question_class="eta",
+                policy_mode="auto",
+                allowed_auto=True,
+                draft=(f"Записала, ждём вас к {said}. "
+                       "Если планы изменятся — просто напишите сюда."
+                       if booking.eta_in else
+                       f"Записала, выезд около {said}. Спасибо!"),
+                matched_faq="время приезда",
+                reason="Гость назвал время — записали в бронь",
+                needs_owner=False,
+                booking_id=booking.id,
+                booking_label=booking_label(booking),
+            )
+            draft = MessageDraft(
+                property_id=prop.id, guest_text=text, draft_text=result.draft,
+                question_class=result.question_class, policy_mode=result.policy_mode,
+                status="auto_sent", matched_faq=result.matched_faq,
+                guest_chat_id=guest_chat_id, guest_user_id=guest_user_id,
+                business_connection_id=business_connection_id,
+                channel=channel, booking_id=booking.id,
+            )
+            session.add(draft)
+            session.flush()
+            return draft, result
+
     twin = _recent_twin(session, text, guest_chat_id)
     if twin is not None:
         # гость нажал «Отправить» дважды — второй ответ ему не нужен

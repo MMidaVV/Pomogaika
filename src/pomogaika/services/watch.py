@@ -17,6 +17,7 @@ from pomogaika.services.mail import poll as poll_mail
 from pomogaika.services.sync import sync_listings
 from pomogaika.services.codes import bookings_in_code_window, door_decision
 from pomogaika.services.notify import notify_owner
+from pomogaika.services.nudges import send_due
 
 log = logging.getLogger("pomogaika.watch")
 
@@ -108,6 +109,7 @@ def _read_mail(session: Session) -> None:
 
 def tick(session: Session) -> None:
     _sync_calendars(session)
+    send_due(session)          # сообщения гостю в узлах пути
     _read_mail(session)
     _stay_notices(session)
     escalate_stale(session)

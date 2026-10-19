@@ -49,6 +49,18 @@ PHASES = {
         "note": "до заезда, три дня в запасе", "snap": True,
         "next": "Дальше: выдать ссылку гостю и переписываться. Код ещё рано.",
     },
+    "tomorrow": {
+        "in": timedelta(hours=20), "out": timedelta(days=2),
+        "flags": {"code_notified": False, "arrived": False, "departed": False, "forget_code": True},
+        "note": "заезд завтра — пора спросить, во сколько гость будет",
+        "next": "В течение минуты гостю уйдёт «завтра ждём вас, во сколько будете?».",
+    },
+    "leaving": {
+        "in": timedelta(days=-1), "out": timedelta(hours=10),
+        "flags": {"code_notified": True, "arrived": True, "departed": False, "forget_code": False},
+        "note": "выезд завтра утром",
+        "next": "Гостю уйдёт напоминание про выезд и вопрос, во сколько съедет.",
+    },
     "code": {
         "in": timedelta(minutes=90), "out": timedelta(days=2),
         "flags": {"code_notified": False, "arrived": False, "departed": False, "forget_code": True},
@@ -159,6 +171,13 @@ def main() -> int:
         booking.code_window_notified = flags["code_notified"]
         booking.arrival_notified = flags["arrived"]
         booking.departure_notified = flags["departed"]
+        # новые узлы пути: сбрасываем, иначе напоминание больше не повторится
+        booking.pre_arrival_notified = False
+        booking.settled_asked = False
+        booking.pre_departure_notified = False
+        booking.awaiting = ""
+        booking.eta_in = None
+        booking.eta_out = None
         if flags["forget_code"]:
             booking.code_hint = ""
             booking.code_issued_at = None

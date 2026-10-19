@@ -2066,3 +2066,111 @@ def test_autosend_makes_copilot_answer_without_owner(monkeypatch):
 
     money = classify_and_draft("Можно скидку?", None)
     assert money.needs_owner is True                       # скидка — всегда человек
+
+
+# ---------- узлы пути гостя ----------
+
+def _booking_for_nudges(tmp_path, name, **kw):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import Booking, Property
+    from pomogaika.services.seed import seed_if_empty
+
+    engine = create_engine(f"sqlite:///{tmp_path / name}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    seed_if_empty(session)
+    session.commit()
+    prop = session.query(Property).one()
+    data = dict(property_id=prop.id, platform="yandex", external_id="N-1",
+                guest_name="Юрий", paid=True, guest_chat_id="999")
+    data.update(kw)
+    booking = Booking(**data)
+    session.add(booking)
+    session.commit()
+    return session, booking
+
+
+def test_day_before_asks_when_guest_arrives(tmp_path):
+    from pomogaika.services.nudges import due
+
+    now = datetime(2026, 10, 21, 15, 0)
+    session, booking = _booking_for_nudges(
+        tmp_path, "n1.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0))
+
+    plan = due(session, now=now)
+    assert [node for _, node, _ in plan] == ["pre_arrival"]
+    assert "во сколько примерно будете" in plan[0][2]
+
+
+def test_nothing_goes_to_a_guest_without_telegram(tmp_path):
+    from pomogaika.services.nudges import due
+
+    session, booking = _booking_for_nudges(
+        tmp_path, "n2.db", guest_chat_id="",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0))
+    assert due(session, now=datetime(2026, 10, 21, 15, 0)) == []
+
+
+def test_asks_how_it_went_after_check_in(tmp_path):
+    from pomogaika.services.nudges import due
+
+    session, _ = _booking_for_nudges(
+        tmp_path, "n3.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0),
+        pre_arrival_notified=True)
+
+    assert due(session, now=datetime(2026, 10, 22, 14, 20)) == []      # рано
+    plan = due(session, now=datetime(2026, 10, 22, 14, 45))
+    assert [node for _, node, _ in plan] == ["settled"]
+
+
+def test_each_node_fires_once(tmp_path, monkeypatch):
+    import pomogaika.services.nudges as nudges
+
+    session, booking = _booking_for_nudges(
+        tmp_path, "n4.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0))
+    monkeypatch.setattr(nudges, "notify_guest", lambda *a, **k: None)
+
+    now = datetime(2026, 10, 21, 15, 0)
+    assert nudges.send_due(session, now=now) == 1
+    session.commit()
+    assert nudges.send_due(session, now=now) == 0                      # второй раз молчим
+    assert booking.awaiting == "eta_in"                                # ждём ответа
+
+
+def test_guest_answer_with_time_lands_in_booking(tmp_path, monkeypatch):
+    import pomogaika.services.nudges as nudges
+
+    session, booking = _booking_for_nudges(
+        tmp_path, "n5.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0),
+        awaiting="eta_in")
+    told = []
+    monkeypatch.setattr(nudges, "notify_owner", lambda text, *a, **k: told.append(text))
+
+    said = nudges.capture_eta(session, booking, "будем часам к семи вечера")
+    assert said == "19:00"
+    assert booking.eta_in == datetime(2026, 10, 22, 19, 0)
+    assert booking.awaiting == ""                                      # вопрос закрыт
+    assert told and "приедет" in told[0]
+
+
+def test_time_is_not_captured_when_we_did_not_ask(tmp_path):
+    from pomogaika.services.nudges import capture_eta
+
+    session, booking = _booking_for_nudges(
+        tmp_path, "n6.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0))
+    assert capture_eta(session, booking, "а завтрак с 10 бывает?") == ""
+    assert booking.eta_in is None
