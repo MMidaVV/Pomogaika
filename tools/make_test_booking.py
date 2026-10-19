@@ -11,6 +11,9 @@
     cd /opt/pomogaika
     sudo -u pomogaika .venv/bin/python tools/make_test_booking.py
 
+Отвязать гостя и выдать ссылку заново:
+    sudo -u pomogaika .venv/bin/python tools/make_test_booking.py --unbind
+
 Убрать после проверки:
     sudo -u pomogaika .venv/bin/python tools/make_test_booking.py --remove
 
@@ -40,6 +43,8 @@ EXTERNAL_ID = "TEST-LINK-1"
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--remove", action="store_true", help="удалить тестовую бронь")
+    ap.add_argument("--unbind", action="store_true",
+                    help="отвязать гостя: вернуть кнопку «Ссылка для гостя» в карточку")
     ap.add_argument("--days", type=int, default=3, help="через сколько дней заезд")
     ap.add_argument("--nights", type=int, default=2, help="сколько ночей")
     ap.add_argument("--name", default="Юрий", help="имя гостя в карточке")
@@ -57,6 +62,17 @@ def main() -> int:
             .filter(Booking.property_id == prop.id, Booking.external_id == EXTERNAL_ID)
             .first()
         )
+
+        if args.unbind:
+            if booking is None:
+                print("Тестовой брони нет.")
+                return 1
+            booking.guest_telegram_user_id = None
+            booking.guest_chat_id = ""
+            booking.business_connection_id = ""
+            session.commit()
+            print("Гость отвязан — ссылку можно выдать заново.")
+            return 0
 
         if args.remove:
             if booking is None:
