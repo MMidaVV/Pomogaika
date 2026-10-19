@@ -10,7 +10,7 @@ $archive = Join-Path $env:TEMP "pomogaika.tar.gz"
 tar --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache `
     --exclude=data --exclude=dialogs --exclude=techlead-archive `
     --exclude=.env --exclude=*.zip --exclude=*.pdf --exclude=.git `
-    -czf $archive src ops tests docs deploy requirements.txt pytest.ini README.md .env.example
+    -czf $archive src ops tests docs deploy tools requirements.txt pytest.ini README.md .env.example
 
 Write-Host "Архив: $([math]::Round((Get-Item $archive).Length/1KB)) KB"
 
