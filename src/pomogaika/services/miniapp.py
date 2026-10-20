@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from calendar import monthrange
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -54,6 +55,16 @@ def _nights(check_in: datetime, check_out: datetime) -> list[date]:
 
 def _covers(day: date, start: datetime, end: datetime) -> bool:
     return start.date() <= day < end.date()
+
+
+def _draft_thread(draft) -> list[dict]:
+    if getattr(draft, "channel", "") != "avito":
+        return []
+    try:
+        rows = json.loads(draft.thread_json or "[]")
+    except json.JSONDecodeError:
+        return []
+    return rows if isinstance(rows, list) else []
 
 
 def properties_for(session: Session, *, owner_id: int | None = None, property_id: int | None = None) -> list[Property]:
@@ -399,6 +410,10 @@ def build_miniapp(
                 "draft_text": d.draft_text,
                 "question_class": d.question_class,
                 "matched_faq": d.matched_faq,
+                "channel": d.channel,
+                "peer": d.guest_user_id if d.channel == "avito" else "",
+                "item": d.business_connection_id if d.channel == "avito" else "",
+                "thread": _draft_thread(d),
             }
             for d in drafts
         ],

@@ -31,6 +31,8 @@ def migrate_sqlite() -> None:
     add("message_drafts", "guest_user_id", "VARCHAR(64) DEFAULT ''")
     add("message_drafts", "business_connection_id", "VARCHAR(128) DEFAULT ''")
     add("message_drafts", "channel", "VARCHAR(32) DEFAULT 'web'")
+    add("message_drafts", "external_chat_id", "VARCHAR(200) DEFAULT ''")
+    add("message_drafts", "thread_json", "TEXT DEFAULT ''")
     add("message_drafts", "booking_id", "INTEGER")
     add("message_drafts", "reply_to", "VARCHAR(200) DEFAULT ''")
     add("message_drafts", "mail_subject", "VARCHAR(300) DEFAULT ''")

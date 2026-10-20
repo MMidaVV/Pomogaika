@@ -134,6 +134,8 @@ class MessageDraft(Base):
     guest_user_id: Mapped[str] = mapped_column(String(64), default="")
     business_connection_id: Mapped[str] = mapped_column(String(128), default="")
     channel: Mapped[str] = mapped_column(String(32), default="web")
+    external_chat_id: Mapped[str] = mapped_column(String(200), default="")
+    thread_json: Mapped[str] = mapped_column(Text, default="")
     booking_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Канал «почта площадки»: куда отвечать, чем цитировать. Без цитаты
     # (в ней CHAT_TOKEN) робот площадки не найдёт чат гостя.

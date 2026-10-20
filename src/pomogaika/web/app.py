@@ -17,6 +17,8 @@ from pomogaika.config import settings
 from pomogaika.db import Base, SessionLocal, engine, get_session, migrate_sqlite
 from pomogaika.domain.dates import parse_close_command
 from pomogaika.models import AuditLog, Block, Booking, BookingConflict, Event, Listing, MessageDraft, Owner, Property, StayOutcome, Task
+from pomogaika.platforms.avito_local import deliver as deliver_avito
+from pomogaika.platforms.avito_local import read_thread as read_avito_thread
 from pomogaika.platforms.email_parser import parse_platform_email
 from pomogaika.platforms.ical import fetch_ics
 from pomogaika.services.llm import enabled as llm_enabled
@@ -44,7 +46,15 @@ from pomogaika.services.cleaning import (
     task_card,
 )
 from pomogaika.services.codes import issue_code
-from pomogaika.services.drafts import apply_draft_action, create_guest_draft
+from pomogaika.services.copilot import classify_and_draft
+from pomogaika.services.drafts import (
+    apply_avito_remote_thread,
+    apply_draft_action,
+    avito_thread,
+    create_avito_draft,
+    create_guest_draft,
+    remember_avito_line,
+)
 from pomogaika.services.outbox import can_send_mail, is_mail, send_mail_draft
 from pomogaika.services.knowledge import apply_knowledge_edit, parse_knowledge_edit
 from pomogaika.services.miniapp import build_miniapp
@@ -53,7 +63,6 @@ from pomogaika.services.ops import ensure_runtime
 from pomogaika.services.outcome import as_dict as outcome_dict, save as save_outcome, summary as outcome_summary
 from pomogaika.services.properties import create_property
 from pomogaika.services import answers as answers_service
-from pomogaika.services.copilot import classify_and_draft
 from pomogaika.services.sync import sync_listings
 from pomogaika.services.registration import (
     add as add_registration,
@@ -434,11 +443,70 @@ class DraftAction(BaseModel):
     text: str | None = None
 
 
+class AvitoMessageIn(BaseModel):
+    channel_id: str
+    peer: str = ""
+    item: str = ""
+    text: str
+
+
+@app.post("/api/avito/message")
+def avito_message(body: AvitoMessageIn, session: Session = Depends(get_session)) -> dict:
+    """Новое сообщение из личного Авито. Создаёт черновик и ничего не отправляет."""
+    try:
+        draft, created = create_avito_draft(
+            session,
+            channel_id=body.channel_id,
+            peer=body.peer,
+            item=body.item,
+            text=body.text,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"id": draft.id, "created": created, "status": draft.status}
+
+
+@app.post("/api/avito/thread/{draft_id}")
+def avito_thread_refresh(draft_id: int, session: Session = Depends(get_session)) -> dict:
+    """Подтянуть реплики из уже открытого Авито, ничего не отправляя."""
+    draft = session.get(MessageDraft, draft_id)
+    if not draft or draft.channel != "avito":
+        raise HTTPException(404)
+    try:
+        messages = read_avito_thread(draft.external_chat_id or draft.guest_chat_id)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    if messages:
+        apply_avito_remote_thread(draft, messages)
+    return {"id": draft.id, "thread": avito_thread(draft)}
+
+
 @app.post("/api/drafts/{draft_id}")
 def draft_action(draft_id: int, body: DraftAction, session: Session = Depends(get_session)) -> dict:
     draft = session.get(MessageDraft, draft_id)
     if not draft:
         raise HTTPException(404)
+    delivered = None
+    if draft.channel == "avito" and body.action in ("send", "edit"):
+        outgoing = (body.text or "").strip() if body.action == "edit" else (draft.draft_text or "").strip()
+        if not outgoing:
+            raise HTTPException(400, "пустой ответ")
+        try:
+            messages = deliver_avito(draft.external_chat_id or draft.guest_chat_id, outgoing)
+        except RuntimeError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        if messages:
+            apply_avito_remote_thread(draft, messages)
+        else:
+            remember_avito_line(draft, "out", outgoing)
+        draft.status = "pending_owner"
+        return {
+            "id": draft.id,
+            "status": draft.status,
+            "draft_text": draft.draft_text,
+            "delivered": "avito",
+            "thread": avito_thread(draft),
+        }
     try:
         apply_draft_action(session, draft, body.action, body.text)
     except ValueError as exc:
@@ -446,7 +514,6 @@ def draft_action(draft_id: int, body: DraftAction, session: Session = Depends(ge
 
     # Черновик из чата площадки уходит письмом прямо отсюда: у мини-аппа
     # нет экземпляра бота, а транспорт у почты свой.
-    delivered = None
     if is_mail(draft) and draft.status in ("sent", "sent_edited"):
         if not can_send_mail(draft):
             raise HTTPException(409, "нет адреса для ответа или не настроен SMTP")

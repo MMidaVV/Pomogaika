@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
 from pomogaika.db import SessionLocal
@@ -154,6 +155,116 @@ def create_guest_draft(
         result.policy_mode,
     )
     return draft, result
+
+
+def avito_thread(draft: MessageDraft) -> list[dict]:
+    try:
+        rows = json.loads(draft.thread_json or "[]")
+    except json.JSONDecodeError:
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def _save_thread(draft: MessageDraft, rows: list[dict]) -> None:
+    draft.thread_json = json.dumps(rows, ensure_ascii=False)
+
+
+def remember_avito_line(draft: MessageDraft, role: str, text: str) -> None:
+    text = (text or "").strip()
+    if not text:
+        return
+    rows = avito_thread(draft)
+    if rows and rows[-1].get("role") == role and rows[-1].get("text") == text:
+        return
+    rows.append({"role": role, "text": text})
+    _save_thread(draft, rows)
+
+
+def apply_avito_remote_thread(draft: MessageDraft, messages: list[dict]) -> None:
+    rows: list[dict] = []
+    for message in messages:
+        text = str(message.get("text") or "").strip()
+        if not text:
+            continue
+        role = "out" if message.get("mine") else "in"
+        if rows and rows[-1]["role"] == role and rows[-1]["text"] == text:
+            continue
+        rows.append({"role": role, "text": text})
+    if rows:
+        _save_thread(draft, rows)
+        last_in = next((row["text"] for row in reversed(rows) if row["role"] == "in"), "")
+        if last_in:
+            draft.guest_text = last_in
+
+
+def create_avito_draft(
+    session: Session,
+    *,
+    channel_id: str,
+    peer: str,
+    item: str,
+    text: str,
+) -> tuple[MessageDraft, bool]:
+    """Карточка для личного Авито. Всегда ждёт кнопку, сама никуда не отправляется.
+
+    Второй элемент True, если карточка создана сейчас, а не найдена прежняя.
+    """
+    channel_id = (channel_id or "").strip()
+    text = (text or "").strip()
+    if not channel_id or not text:
+        raise ValueError("нужны чат и текст сообщения")
+    existing = (
+        session.query(MessageDraft)
+        .filter(
+            MessageDraft.channel == "avito",
+            MessageDraft.external_chat_id == channel_id[:200],
+        )
+        .order_by(MessageDraft.id.desc())
+        .first()
+    )
+    if existing is not None:
+        known = any(row.get("role") == "in" and row.get("text") == text for row in avito_thread(existing))
+        if not known and not avito_thread(existing) and existing.guest_text == text:
+            known = True
+        if not known:
+            remember_avito_line(existing, "in", text)
+            if existing.guest_text != text:
+                result = classify_and_draft(text, None, session=session, prop=session.query(Property).one())
+                existing.guest_text = text
+                existing.draft_text = result.draft
+                existing.question_class = result.question_class
+                existing.matched_faq = result.matched_faq
+                existing.status = "pending_owner"
+        elif not avito_thread(existing):
+            remember_avito_line(existing, "in", text)
+        return existing, False
+    prop = session.query(Property).one()
+    result = classify_and_draft(text, None, session=session, prop=prop)
+    draft = MessageDraft(
+        property_id=prop.id,
+        guest_text=text,
+        draft_text=result.draft,
+        question_class=result.question_class,
+        policy_mode="confirm",
+        status="pending_owner",
+        matched_faq=result.matched_faq,
+        guest_chat_id=channel_id[:64],
+        guest_user_id=(peer or "Собеседник")[:64],
+        business_connection_id=(item or "")[:128],
+        channel="avito",
+        external_chat_id=channel_id[:200],
+        thread_json=json.dumps([{"role": "in", "text": text}], ensure_ascii=False),
+    )
+    session.add(draft)
+    session.flush()
+    emit(
+        session,
+        "message.draft_created",
+        {"id": draft.id, "class": result.question_class, "channel": "avito"},
+        prop.id,
+    )
+    audit(session, "typical_reply", "Черновик из Авито ждёт кнопку отправки", "guest_agent", "owner", "confirm")
+    return draft, True
 
 
 def save_guest_draft(

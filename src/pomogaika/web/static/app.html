@@ -105,6 +105,14 @@
       display: grid; place-items: center; color: inherit; padding: 0; flex: 0 0 auto;
     }
     .icon-btn.bordered { border: 1px solid rgba(255,255,255,.28); width: 38px; height: 34px; }
+    #chat-open { position: relative; }
+    #chat-open.has-drafts { border-color: #F2B84B; color: #F2B84B; }
+    #chat-open.has-drafts::after {
+      content: attr(data-n); position: absolute; top: -6px; right: -6px;
+      min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+      background: #E25B45; color: #fff; font: 700 10px "Golos Text";
+      display: grid; place-items: center;
+    }
     .burger span { display: block; width: 18px; height: 2px; background: #fff; border-radius: 2px; margin: 4px 0; }
     .brand { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
     .brand .mark {
@@ -470,6 +478,7 @@
     }
     .chat-head h3 { margin: 0; font-size: 17px; font-weight: 600; }
     .chat-head .x { color: rgba(255,255,255,.8); }
+    .chat-sub, .chat-body, .chat-foot { width: min(680px, 100%); margin-left: auto; margin-right: auto; box-sizing: border-box; }
     .chat-sub { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--line); }
     .chat-sub b { font-size: 15px; font-weight: 600; color: var(--ink); }
     .chat-sub span { color: var(--muted); font-family: var(--mono); font-size: 12px; }
@@ -709,6 +718,8 @@ async function load(keepScroll) {
   const n = D.attention.drafts + D.attention.conflicts + D.attention.tasks;
   $("tab-badge").classList.toggle("hidden", !n);
   $("tab-badge").textContent = n;
+  $("chat-open").classList.toggle("has-drafts", D.attention.drafts > 0);
+  $("chat-open").dataset.n = D.attention.drafts ? String(D.attention.drafts) : "";
   $("statusbar").innerHTML =
     `Требуют вас: <b class="${n ? "hot" : ""}">${n}</b> · Объектов: <b>${D.objects.length}</b>`
     + ` · Загрузка: <b>${D.month.occupancy}%</b> · Ночей: <b>${D.month.occupied}/${D.month.slots}</b>`
@@ -1420,17 +1431,45 @@ function openChat() {
 }
 function closeChat() { $("chat").classList.remove("on"); chatDraft = null; }
 
+function threadBubbles(d, t) {
+  const rows = Array.isArray(d.thread) && d.thread.length
+    ? d.thread
+    : [{ role: "in", text: d.guest_text }];
+  return rows.map((row) => `<div class="msg ${row.role === "out" ? "out" : "in"}">${esc(row.text || "")}<span class="t">${row.role === "out" ? "вы · " : ""}${t}</span></div>`).join("");
+}
+
+async function refreshAvitoThread(id) {
+  try {
+    await api("/api/avito/thread/" + id, {});
+    await load(true);
+    if (chatDraft === id) renderChat();
+  } catch (e) {
+    toast("Переписку из Авито не прочитал: " + e.message);
+  }
+}
+
 function renderChat() {
   if (chatDraft == null) {
-    const rows = D.drafts.map((d) => `<button class="nrow" data-d="${d.id}">
+    const rows = D.drafts.map((d) => {
+      const title = d.channel === "avito" && d.peer ? d.peer : (d.guest_text || "").slice(0, 34);
+      const sub = d.channel === "avito"
+        ? [d.item, (d.guest_text || "").slice(0, 48)].filter(Boolean).join(" · ")
+        : `${d.question_class}${d.matched_faq ? " · " + d.matched_faq : ""}`;
+      return `<button class="nrow" data-d="${d.id}">
       <span class="ic">${ICONS.ticket}</span>
-      <span class="tt"><b>${esc((d.guest_text || "").slice(0, 34))}</b><span>${esc(d.question_class)}${d.matched_faq ? " · " + esc(d.matched_faq) : ""}</span></span>
-      <span class="pill">1</span></button>`).join("") || `<div class="empty" style="padding:20px">Новых вопросов нет</div>`;
+      <span class="tt"><b>${esc(title)}</b><span>${esc(sub)}</span></span>
+      <span class="pill">1</span></button>`;
+    }).join("") || `<div class="empty" style="padding:20px">Новых вопросов нет</div>`;
     $("chat").innerHTML = `
       <div class="chat-head"><h3>Чат с гостем</h3><button class="x" id="chat-x">×</button></div>
       <div class="nlist" style="overflow:auto">${rows}</div>`;
     $("chat-x").onclick = closeChat;
-    $("chat").querySelectorAll("[data-d]").forEach((b) => (b.onclick = () => { chatDraft = Number(b.dataset.d); renderChat(); }));
+    $("chat").querySelectorAll("[data-d]").forEach((b) => (b.onclick = () => {
+      chatDraft = Number(b.dataset.d);
+      renderChat();
+      const row = D.drafts.find((x) => x.id === chatDraft);
+      if (row && row.channel === "avito") refreshAvitoThread(row.id);
+    }));
     return;
   }
   const d = D.drafts.find((x) => x.id === chatDraft);
@@ -1438,18 +1477,18 @@ function renderChat() {
   const t = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   $("chat").innerHTML = `
     <div class="chat-head"><h3>Чат с гостем</h3><button class="x" id="chat-x">×</button></div>
-    <div class="chat-sub"><button class="x" id="chat-back">«</button><b>Гость</b>
-      <span class="schip amber">${esc(d.question_class)}</span></div>
+    <div class="chat-sub"><button class="x" id="chat-back">«</button><b>${esc(d.channel === "avito" && d.peer ? d.peer : "Гость")}</b>
+      <span class="schip amber">${esc(d.channel === "avito" ? "Авито" : d.question_class)}</span></div>
     <div class="chat-body">
-      <div class="chat-day">Диалог начался: ${new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })} г.</div>
-      <div class="msg in">${esc(d.guest_text)}<span class="t">${t}</span></div>
-      <div class="msg draft">${esc(d.draft_text)}<span class="t">черновик · ${t}</span></div>
-      <button class="btn solid" id="d-send" style="align-self:flex-end;width:auto;padding:0 18px">Отправить как есть</button>
-      <button class="btn ghost" id="d-self" style="align-self:flex-end;width:auto;padding:0 18px">Отвечу сама</button>
+      <div class="chat-day">${d.item ? esc(d.item) + " · " : ""}ничего не уходит, пока не нажмёте кнопку</div>
+      ${threadBubbles(d, t)}
+      <div class="msg draft">${esc(d.draft_text)}<span class="t">предложение модели, ещё не отправлено</span></div>
+      <button class="btn solid" id="d-send" style="align-self:flex-end;width:auto;padding:0 18px">${d.channel === "avito" ? "Отправить текст модели" : "Отправить как есть"}</button>
+      ${d.channel === "avito" ? "" : `<button class="btn ghost" id="d-self" style="align-self:flex-end;width:auto;padding:0 18px">Отвечу сама</button>`}
     </div>
     <div class="chat-foot">
-      <input id="d-text" placeholder="Поправить ответ" />
-      <button class="send" id="d-edit">➤</button>
+      <input id="d-text" placeholder="${d.channel === "avito" ? "Свой текст, не от модели" : "Поправить ответ"}" />
+      <button class="btn solid" id="d-edit" style="width:auto;height:42px;padding:0 14px">${d.channel === "avito" ? "Отправить свой" : "➤"}</button>
     </div>`;
   $("chat-x").onclick = closeChat;
   $("chat-back").onclick = () => { chatDraft = null; renderChat(); };
@@ -1457,12 +1496,20 @@ function renderChat() {
     try {
       await api("/api/drafts/" + d.id, { action, text: text || null });
       haptic("ok"); chatDraft = null; await load(true); renderChat();
-      toast(action === "send" ? "Ответ ушёл гостю" : action === "edit" ? "Правка отправлена" : "Оставила вам");
+      const sent = d.channel === "avito" ? "Отправлено в Авито" : "Ответ ушёл гостю";
+      toast(action === "send" ? sent : action === "edit" ? (d.channel === "avito" ? "Правка отправлена в Авито" : "Правка отправлена") : "Оставила вам");
     } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
   };
   $("d-send").onclick = () => act("send");
-  $("d-self").onclick = () => act("self");
-  $("d-edit").onclick = () => { const v = $("d-text").value.trim(); if (v) act("edit", v); };
+  if ($("d-self")) $("d-self").onclick = () => act("self");
+  $("d-edit").onclick = () => {
+    const v = $("d-text").value.trim();
+    if (!v) { toast(d.channel === "avito" ? "Введите свой текст" : "Введите ответ"); return; }
+    act("edit", v);
+  };
+  $("d-text").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") $("d-edit").click();
+  });
 }
 
 

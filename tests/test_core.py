@@ -2174,3 +2174,53 @@ def test_time_is_not_captured_when_we_did_not_ask(tmp_path):
         check_out=datetime(2026, 10, 24, 12, 0))
     assert capture_eta(session, booking, "а завтрак с 10 бывает?") == ""
     assert booking.eta_in is None
+
+
+def test_avito_draft_stays_until_send(_prop, _db, monkeypatch):
+    from pomogaika.services.copilot import CopilotResult
+    from pomogaika.services.drafts import create_avito_draft
+
+    monkeypatch.setattr(
+        "pomogaika.services.drafts.classify_and_draft",
+        lambda *args, **kwargs: CopilotResult(
+            question_class="typical",
+            policy_mode="auto",
+            allowed_auto=True,
+            draft="Можно забрать вечером",
+            matched_faq="",
+            reason="",
+            needs_owner=False,
+        ),
+    )
+    draft, created = create_avito_draft(
+        _db,
+        channel_id="/profile/messenger/channel/u2i-test",
+        peer="Мария",
+        item="Тумба",
+        text="Когда забрать?",
+    )
+    assert created is True
+    assert draft.status == "pending_owner"
+    assert draft.channel == "avito"
+    assert draft.external_chat_id.endswith("u2i-test")
+    assert '"role": "in"' in draft.thread_json
+    again, created_again = create_avito_draft(
+        _db,
+        channel_id="/profile/messenger/channel/u2i-test",
+        peer="Мария",
+        item="Тумба",
+        text="Когда забрать?",
+    )
+    assert created_again is False
+    assert again.id == draft.id
+    later, created_later = create_avito_draft(
+        _db,
+        channel_id="/profile/messenger/channel/u2i-test",
+        peer="Мария",
+        item="Тумба",
+        text="А вечером можно?",
+    )
+    assert created_later is False
+    assert later.id == draft.id
+    assert later.guest_text == "А вечером можно?"
+    assert later.thread_json.count('"role": "in"') == 2

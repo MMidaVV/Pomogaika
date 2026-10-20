@@ -38,6 +38,8 @@ python -m uvicorn pomogaika.web.app:app --host 127.0.0.1 --port 8000
 Пока сервис работает на сервере, локально бота запускать нельзя: `getUpdates` эксклюзивный,
 оба экземпляра получат `TelegramConflictError`.
 
+Личный Авито через локальный Chrome, без бота и без аккаунта KaVa: [docs/avito-browser.md](docs/avito-browser.md).
+
 ## Telegram
 
 Пошагово: [docs/telegram.md](docs/telegram.md). Кратко: токен от BotFather в `.env` как `TELEGRAM_BOT_TOKEN`, снова `.\run.ps1`, боту `/start` с вашего Premium-аккаунта. Гость пишет боту (или вам в личку, если подключите Business).
