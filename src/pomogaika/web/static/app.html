@@ -10,37 +10,76 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
+      /* ---- Титан + оранж, приглушённая тема (по умолчанию) ----
+         Имена переменных оставлены прежними: на них завязано 209 мест
+         в стилях. Меняются только значения, разметку это не трогает. */
       /* холст */
-      --bg: #EDF1F7;
-      --card: #FFFFFF;
-      --line: #E1E8F0;
-      --line-2: #D3DDE9;
+      --bg: #f5f6f8;
+      --surf: #e9ebee;
+      --card: #ffffff;
+      --line: #d6dae0;
+      --line-2: #c6ccd4;
       /* текст */
-      --ink: #13365F;
-      --text: #1F3550;
-      --hint: #5E7189;
-      --muted: #8A99AC;
-      /* синий */
-      --navy: #123A6D;
-      --navy-2: #0E2F5C;
-      --blue: #1E5FA8;
-      --blue-2: #2A6FB8;
-      --blue-soft: #E8F0FA;
+      --ink: #15181d;
+      --text: #232a33;
+      --hint: #5f6b78;
+      --muted: #7d8793;
+      /* акцент: оранжевый вместо синего. Старые имена оставлены
+         псевдонимами, чтобы не править 209 мест разом. */
+      --accent: #ff6b00;
+      --accent-2: #d95a00;
+      --accent-soft: #ffe3cf;
+      --accent-ink: #b84d00;
+      --halo: rgba(255,107,0,.18);
+      --navy: #2b3038;
+      --navy-2: #15181d;
+      --blue: var(--accent);
+      --blue-2: var(--accent-2);
+      --blue-soft: var(--accent-soft);
       /* статусы */
-      --amber: #E9B85C;
-      --amber-bg: #FDF7EA;
-      --amber-ink: #8A6420;
-      --green: #1F7B4D;
-      --green-2: #2E9E6B;
-      --green-bg: #DFF3E7;
-      --red: #C2382F;
-      --red-bg: #FBE3E0;
+      --amber: #e9a13c;
+      --amber-bg: #fbeedd;
+      --amber-ink: #8a5a20;
+      --green: #1f7a4d;
+      --green-2: #2e9e6b;
+      --green-bg: #e2f3ea;
+      --red: #c2382f;
+      --red-bg: #fbe3e0;
       --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
       --topbar: 52px;
       --statusbar: 26px;
       --tabbar: 60px;
       --cw: 46px;
       --name-w: 116px;
+    }
+
+    /* ---- Тёмная тема: тот же набор, другие значения ----
+       Включается атрибутом на <html>; JS ставит его по теме Telegram. */
+    :root[data-theme="dark"] {
+      --bg: #15181d;
+      --surf: #1d2127;
+      --card: #272c34;
+      --line: #343a44;
+      --line-2: #3e4652;
+      --ink: #f1f3f6;
+      --text: #e4e8ee;
+      --hint: #9aa3ae;
+      --muted: #7f8a96;
+      --accent: #ff6b00;
+      --accent-2: #d95a00;
+      --accent-soft: #3a2412;
+      --accent-ink: #ffb27a;
+      --halo: rgba(255,107,0,.42);
+      --navy: #0f1216;
+      --navy-2: #0b0e11;
+      --amber: #e9a13c;
+      --amber-bg: #3a2e14;
+      --amber-ink: #f0c279;
+      --green: #8fd6a8;
+      --green-2: #5fbd87;
+      --green-bg: #1d3326;
+      --red: #ff8a7e;
+      --red-bg: #3a1d1a;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
@@ -542,10 +581,23 @@ syncViewportHeight();
 window.addEventListener("resize", syncViewportHeight);
 if (tg && tg.onEvent) tg.onEvent("viewportChanged", syncViewportHeight);
 
+// Тема берётся у Telegram: в вебвью у человека она уже выбрана.
+// Вся разница между темами — значения переменных в :root.
+function applyTheme(name) {
+  const dark = name === "dark";
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  const face = dark ? "#15181d" : "#ffffff";
+  const back = dark ? "#15181d" : "#f5f6f8";
+  try {
+    if (tg && tg.setHeaderColor) tg.setHeaderColor(face);
+    if (tg && tg.setBackgroundColor) tg.setBackgroundColor(back);
+  } catch (e) { /* старый клиент Telegram — тема всё равно применилась */ }
+}
+
 if (tg) {
   tg.ready(); tg.expand();
-  if (tg.setHeaderColor) tg.setHeaderColor("#ffffff");
-  if (tg.setBackgroundColor) tg.setBackgroundColor("#EEF1F7");
+  applyTheme(tg.colorScheme === "dark" ? "dark" : "light");
+  if (tg.onEvent) tg.onEvent("themeChanged", () => applyTheme(tg.colorScheme === "dark" ? "dark" : "light"));
   if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
 }
 const haptic = (kind) => { try { if (kind === "ok" || kind === "error") tg.HapticFeedback.notificationOccurred(kind === "ok" ? "success" : "error"); else tg.HapticFeedback.impactOccurred("light"); } catch (e) {} };
