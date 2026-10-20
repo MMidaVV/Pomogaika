@@ -13,3 +13,8 @@ dialogs/
 *.zip
 *.pdf
 techlead-archive/
+
+# Эксперимент Авито: сессия браузера и тексты переписок
+tools/avito-browser/node_modules/
+tools/avito-browser/profile/
+tools/avito-browser/logs/
