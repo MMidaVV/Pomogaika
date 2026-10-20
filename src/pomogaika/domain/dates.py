@@ -140,3 +140,72 @@ def fmt_dt(value: datetime) -> str:
 
 def fmt_span(check_in: datetime, check_out: datetime) -> str:
     return f"{check_in.strftime('%d.%m')} {check_in.strftime('%H:%M')} → {check_out.strftime('%d.%m')} {check_out.strftime('%H:%M')}"
+
+
+# Время приезда гость называет как угодно: «в 19:30», «часам к семи»,
+# «ближе к обеду». Разбираем то, что однозначно, остальное оставляем человеку —
+# выдуманное время хуже, чем его отсутствие.
+HOUR_WORDS = {
+    "час": 1, "часу": 1,
+    "два": 2, "двум": 2, "двух": 2,
+    "три": 3, "трём": 3, "трем": 3, "трёх": 3, "трех": 3,
+    "четыре": 4, "четырём": 4, "четырем": 4, "четырёх": 4, "четырех": 4,
+    "пять": 5, "пяти": 5,
+    "шесть": 6, "шести": 6,
+    "семь": 7, "семи": 7,
+    "восемь": 8, "восьми": 8,
+    "девять": 9, "девяти": 9,
+    "десять": 10, "десяти": 10,
+    "одиннадцать": 11, "одиннадцати": 11,
+    "двенадцать": 12, "двенадцати": 12,
+    "полдень": 12, "полудню": 12, "полудня": 12,
+    "полночь": 0, "полуночи": 0,
+}
+TIME_DIGITS = re.compile(r"\b([0-2]?\d)[:.\s]([0-5]\d)\b")
+TIME_HOUR = re.compile(r"\b(?:в|к|около|примерно|часам к|ближе к)\s*([0-2]?\d)(?:\s*(?:час\w*|ч\b))?", re.IGNORECASE)
+TIME_WORD = re.compile(r"\b(?:в|к|часам к|ближе к)\s+([а-яё]+)", re.IGNORECASE)
+EVENING = re.compile(r"\bвечер\w*\b", re.IGNORECASE)
+MORNING = re.compile(r"\bутр\w*\b", re.IGNORECASE)
+NIGHT = re.compile(r"\bноч\w*\b", re.IGNORECASE)
+
+
+def parse_time_hint(text: str) -> tuple[int, int] | None:
+    """Час и минуты из фразы гостя. None — не поняли, и это нормально."""
+    if not text:
+        return None
+    low = text.lower()
+
+    found = TIME_DIGITS.search(low)
+    if found:
+        hour, minute = int(found.group(1)), int(found.group(2))
+        if hour <= 23:
+            return _shift_pm(hour, low), minute
+
+    found = TIME_HOUR.search(low)
+    if found:
+        hour = int(found.group(1))
+        if hour <= 23:
+            return _shift_pm(hour, low), 0
+
+    found = TIME_WORD.search(low)
+    if found:
+        hour = HOUR_WORDS.get(found.group(1))
+        if hour is not None:
+            return _shift_pm(hour, low), 0
+
+    if EVENING.search(low):
+        return 19, 0
+    if NIGHT.search(low):
+        return 23, 0
+    if MORNING.search(low):
+        return 9, 0
+    return None
+
+
+def _shift_pm(hour: int, text: str) -> int:
+    """«к семи вечера» — это 19, а не 7. «в 7 утра» остаётся семью."""
+    if hour <= 11 and EVENING.search(text):
+        return hour + 12
+    if hour <= 11 and NIGHT.search(text) and hour >= 9:
+        return hour + 12
+    return hour

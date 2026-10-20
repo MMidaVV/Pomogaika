@@ -17,6 +17,7 @@ from pomogaika.services.mail import poll as poll_mail
 from pomogaika.services.sync import sync_listings
 from pomogaika.services.codes import bookings_in_code_window, door_decision
 from pomogaika.services.notify import notify_owner
+from pomogaika.services.nudges import send_due
 
 log = logging.getLogger("pomogaika.watch")
 
@@ -92,6 +93,9 @@ def _read_mail(session: Session) -> None:
     except Exception:
         log.exception("почта недоступна")
         return
+    if report.get("messages"):
+        # про каждое сообщение гостя собственник уже получил отдельное письмо-карточку
+        log.info("почта: сообщений гостей %s", report["messages"])
     if report["created"] or report["updated"]:
         log.info("почта: новых броней %s, обновлено %s", report["created"], report["updated"])
         if report["created"]:
@@ -105,6 +109,7 @@ def _read_mail(session: Session) -> None:
 
 def tick(session: Session) -> None:
     _sync_calendars(session)
+    send_due(session)          # сообщения гостю в узлах пути
     _read_mail(session)
     _stay_notices(session)
     escalate_stale(session)

@@ -77,6 +77,15 @@ class Booking(Base):
     code_window_notified: Mapped[bool] = mapped_column(Boolean, default=False)
     arrival_notified: Mapped[bool] = mapped_column(Boolean, default=False)
     departure_notified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Во сколько гость планирует приехать и съехать — спрашиваем заранее,
+    # чтобы не угадывать и чтобы уборку ставить по факту, а не по расписанию.
+    eta_in: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    eta_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Какого ответа ждём от гостя: eta_in | eta_out | пусто.
+    awaiting: Mapped[str] = mapped_column(String(16), default="")
+    pre_arrival_notified: Mapped[bool] = mapped_column(Boolean, default=False)
+    settled_asked: Mapped[bool] = mapped_column(Boolean, default=False)
+    pre_departure_notified: Mapped[bool] = mapped_column(Boolean, default=False)
     checked_in_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     checked_out_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
@@ -126,6 +135,12 @@ class MessageDraft(Base):
     business_connection_id: Mapped[str] = mapped_column(String(128), default="")
     channel: Mapped[str] = mapped_column(String(32), default="web")
     booking_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Канал «почта площадки»: куда отвечать, чем цитировать. Без цитаты
+    # (в ней CHAT_TOKEN) робот площадки не найдёт чат гостя.
+    reply_to: Mapped[str] = mapped_column(String(200), default="")
+    mail_subject: Mapped[str] = mapped_column(String(300), default="")
+    mail_message_id: Mapped[str] = mapped_column(String(200), default="")
+    mail_quote: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 

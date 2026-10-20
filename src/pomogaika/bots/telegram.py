@@ -52,6 +52,7 @@ from pomogaika.services.drafts import apply_draft_action, save_guest_draft
 from pomogaika.services.guest import bind_guest, upcoming_for_link
 from pomogaika.services.knowledge import apply_knowledge_edit, dump_knowledge, parse_knowledge_edit
 from pomogaika.services.notify import notify_chat, notify_guest
+from pomogaika.services.outbox import can_send_mail, is_mail, send_mail_draft
 from pomogaika.services.seed import audit
 from pomogaika.services.watch import tick
 
@@ -78,6 +79,23 @@ def _is_owner(user_id: int) -> bool:
     session = _session()
     try:
         return user_id in staff_ids(session)
+    finally:
+        session.close()
+
+
+def _business_owner_id() -> int | None:
+    """Чей это business-аккаунт: только его собственные сообщения пропускаем.
+
+    Раньше здесь стоял `_is_owner`, и бот молча игнорировал любого, у кого есть
+    доступ в мини-апп. Человек с доступом, написавший как гость, не получал
+    ни ответа, ни черновика, и в журнале не оставалось ни строки.
+    """
+    session = _session()
+    try:
+        row = session.query(TelegramLink).filter_by(kind="business").first()
+        if row and row.owner_user_id:
+            return row.owner_user_id
+        return settings.telegram_owner_user_id
     finally:
         session.close()
 
@@ -118,7 +136,12 @@ def _owner_chat_id() -> int | None:
         owner = session.query(Owner).first()
         if owner and owner.telegram_chat_id:
             return owner.telegram_chat_id
-        return None
+        # В личной переписке chat_id совпадает с user_id, поэтому известный
+        # user_id — рабочий запасной адрес. Без этого карточка с черновиком
+        # молча пропадала, если собственник ни разу не нажимал /start.
+        if owner and owner.telegram_user_id:
+            return owner.telegram_user_id
+        return settings.telegram_owner_user_id
     finally:
         session.close()
 
@@ -191,6 +214,12 @@ async def _notify_owner(bot: Bot, text: str, markup: InlineKeyboardMarkup | None
 
 
 async def _send_to_guest(bot: Bot, draft: MessageDraft, text: str) -> None:
+    # Гость из чата площадки пришёл письмом — туда же и отвечаем.
+    if is_mail(draft):
+        if not can_send_mail(draft):
+            raise RuntimeError("нет адреса для ответа или не настроен SMTP")
+        await asyncio.to_thread(send_mail_draft, draft, text)
+        return
     if not draft.guest_chat_id:
         raise RuntimeError("нет чата гостя")
     kwargs: dict = {"chat_id": int(draft.guest_chat_id), "text": text}
@@ -653,7 +682,10 @@ async def _handle_guest_text(
 async def guest_business(message: Message, bot: Bot) -> None:
     if not message.text or not message.from_user:
         return
-    if _is_owner(message.from_user.id):
+    # Telegram шлёт business_message и на исходящие — свои сообщения пропускаем.
+    # Все остальные, включая людей с доступом в пульт, пишут нам как гости.
+    if message.from_user.id == _business_owner_id():
+        log.debug("business: своё исходящее сообщение, пропускаем")
         return
     await _handle_guest_text(
         bot,

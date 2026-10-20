@@ -1494,6 +1494,278 @@ YA-0388-2035-3750:0
     assert p.amount_cents == 3324000       # берём то, что заплатил гость
 
 
+# ---------- Яндекс: чат с гостем через письмо ----------
+
+YANDEX_CHAT_SUBJECT = "Новое сообщение от гостя по бронированию «YA-1111-2222-3333:0»"
+YANDEX_CHAT_BODY = """##Чтобы отправить сообщение в чат, ответьте на письмо над этой линией##
+по бронированию в KAVA — апартаменты у моря, Зеленоградск
+У вас новое сообщение от гостя
+в чате Экстранета
+27 июля 2026 16:07 (местное время)
+Добрый день
+27 июля 2026 16:08 (местное время)
+А мы можем завтра выехать попозже?
+Вы можете ответить гостю прямо из этого письма. Нажмите «Ответить»
+Перейти в чат
+Номер бронирования
+YA-1111-2222-3333:0
+Даты бронирования
+четверг, 23 июля —
+вторник, 28 июля
+[[CHAT_TOKEN:eyJjaGF0X2lkIjoxMjN9]]
+"""
+
+
+def test_yandex_chat_letter_gives_text_and_booking():
+    from pomogaika.platforms.guest_mail import parse as parse_guest_mail
+
+    found = parse_guest_mail(
+        YANDEX_CHAT_SUBJECT,
+        YANDEX_CHAT_BODY,
+        reply_to="robot-travel-sp-prod@yandex-team.ru",
+        message_id="<abc@supersender.yandex.net>",
+    )
+    assert found is not None
+    assert found.platform == "yandex"
+    assert found.external_id == "YA-1111-2222-3333:0"
+    # обе реплики гостя, без отбивок времени и без подвала письма
+    assert found.text == "Добрый день\nА мы можем завтра выехать попозже?"
+    assert "Перейти в чат" not in found.text
+    assert found.reply_to == "robot-travel-sp-prod@yandex-team.ru"
+    # цитата нужна целиком: в ней CHAT_TOKEN, по нему робот находит чат
+    assert "CHAT_TOKEN" in found.quote
+
+
+def test_booking_letter_is_not_a_guest_message():
+    """Письмо о брони не должно приезжать в чат, иначе Помогайка ответит себе."""
+    from pomogaika.platforms.guest_mail import parse as parse_guest_mail
+
+    text = (
+        "Новое бронирование в «KAVA — апартаменты у моря»\n"
+        "Номер бронирования\nYA-1111-2222-3333:0\n"
+        "Заезд\n23.07.2026\nВыезд\n28.07.2026\n"
+    )
+    assert parse_guest_mail("Новое бронирование", text) is None
+
+
+def test_reply_quotes_original_and_keeps_thread():
+    from pomogaika.platforms import mailsend
+
+    message = mailsend.build(
+        "robot-travel-sp-prod@yandex-team.ru",
+        YANDEX_CHAT_SUBJECT,
+        "Выехать позже можно до 14:00, доплата 500 ₽.",
+        in_reply_to="<abc@supersender.yandex.net>",
+        quote=YANDEX_CHAT_BODY,
+    )
+    assert message["Subject"] == "Re: " + YANDEX_CHAT_SUBJECT
+    assert message["In-Reply-To"] == "<abc@supersender.yandex.net>"
+    assert message["References"] == "<abc@supersender.yandex.net>"
+    body = message.get_content()
+    # наш текст — над линией площадки, цитата под ним
+    assert body.index("доплата 500") < body.index("##Чтобы отправить сообщение")
+    assert "CHAT_TOKEN" in body
+
+
+def test_reply_subject_not_doubled():
+    from pomogaika.platforms import mailsend
+
+    assert mailsend.reply_subject("Re: что-то") == "Re: что-то"
+    assert mailsend.reply_subject("что-то") == "Re: что-то"
+
+
+def test_guest_mail_without_autosend_waits_for_human(tmp_path, monkeypatch):
+    """Предохранитель: без GUEST_MAIL_AUTOSEND ответ гостю не уходит сам."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import Booking, MessageDraft, Property
+    from pomogaika.platforms.guest_mail import parse as parse_guest_mail
+    from pomogaika.services.mail import handle_guest_mail
+    from pomogaika.services.seed import seed_if_empty
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'chat.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    seed_if_empty(session)
+    session.commit()
+    prop = session.query(Property).first()
+
+    session.add(Booking(
+        property_id=prop.id,
+        platform="yandex",
+        external_id="YA-1111-2222-3333:0",
+        guest_name="Евгения",
+        check_in=datetime(2026, 7, 23, 14, 0),
+        check_out=datetime(2026, 7, 28, 12, 0),
+        paid=True,
+    ))
+    session.commit()
+
+    sent: list = []
+    monkeypatch.setattr("pomogaika.services.mail.send_mail_draft",
+                        lambda draft, text: sent.append(text))
+    monkeypatch.setattr("pomogaika.services.mail.notify_owner", lambda *a, **k: None)
+    monkeypatch.setattr("pomogaika.config.settings.guest_mail_autosend", False)
+
+    guest = parse_guest_mail(
+        YANDEX_CHAT_SUBJECT, YANDEX_CHAT_BODY,
+        reply_to="robot-travel-sp-prod@yandex-team.ru",
+        message_id="<abc@supersender.yandex.net>",
+    )
+    draft = handle_guest_mail(session, prop, guest)
+    session.commit()
+
+    assert sent == []                                  # никому ничего не ушло
+    assert draft.status == "pending_owner"
+    assert draft.channel == "mail_yandex"
+    assert draft.reply_to == "robot-travel-sp-prod@yandex-team.ru"
+    assert draft.mail_message_id == "<abc@supersender.yandex.net>"
+    assert "CHAT_TOKEN" in draft.mail_quote
+    saved = session.get(MessageDraft, draft.id)         # в сиде уже есть демо-черновики
+    assert saved.booking_id is not None                 # склеилось с бронью по номеру
+
+
+# ---------- business-чат: кто считается гостем ----------
+
+def test_business_skips_only_account_owner(tmp_path, monkeypatch):
+    """Человек с доступом в пульт, написавший в личку, — гость, а не «свой».
+
+    Раньше бот молча игнорировал любого из staff_ids, и приглашённый коллега
+    не получал ни ответа, ни черновика.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import AccessUser, Owner, TelegramLink
+    from pomogaika.services.access import staff_ids
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'biz.db'}")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    session.add(Owner(name="Галина", telegram_user_id=111, telegram_chat_id=111))
+    session.add(TelegramLink(kind="business", business_connection_id="bc1", owner_user_id=111))
+    session.add(AccessUser(telegram_user_id=222, name="Юрий"))
+    session.commit()
+
+    import pomogaika.bots.telegram as tg
+    monkeypatch.setattr(tg, "_session", lambda: Session())
+    monkeypatch.setattr(tg.settings, "telegram_owner_user_id", 111)
+
+    # приглашённый коллега остаётся «своим» для пульта
+    assert 222 in staff_ids(session)
+    # но в business-чате он пишет как гость
+    assert tg._business_owner_id() == 111
+    assert tg._business_owner_id() != 222
+
+
+def test_owner_chat_falls_back_to_user_id(tmp_path, monkeypatch):
+    """Карточка с черновиком не должна пропадать, если chat_id ещё не сохранён."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import Owner
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'owner.db'}")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    session.add(Owner(name="Галина", telegram_user_id=777))   # chat_id пуст
+    session.commit()
+
+    import pomogaika.bots.telegram as tg
+    monkeypatch.setattr(tg, "_session", lambda: Session())
+    assert tg._owner_chat_id() == 777
+
+
+# ---------- старые непрочитанные письма не будят собственника ----------
+
+def _mail_session(tmp_path, name):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.services.seed import seed_if_empty
+
+    engine = create_engine(f"sqlite:///{tmp_path / name}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    seed_if_empty(session)
+    session.commit()
+    return session
+
+
+def _yandex_letter(uid, age_hours):
+    from pomogaika.platforms.mailbox import Letter
+
+    return Letter(
+        uid=uid,
+        sender="Яндекс.Путешествия <extranet@travel.yandex.ru>",
+        subject=YANDEX_CHAT_SUBJECT,
+        body=YANDEX_CHAT_BODY,
+        reply_to="robot-travel-sp-prod@yandex-team.ru",
+        message_id=f"<{uid}@supersender.yandex.net>",
+        sent_at=datetime.utcnow() - timedelta(hours=age_hours),
+    )
+
+
+def test_old_guest_letter_is_marked_read_without_a_card(tmp_path, monkeypatch):
+    """Июньское непрочитанное письмо не должно превращаться в карточку."""
+    from pomogaika.models import MessageDraft
+    import pomogaika.services.mail as mail
+
+    session = _mail_session(tmp_path, "stale.db")
+    before = session.query(MessageDraft).count()
+    seen: list[str] = []
+    monkeypatch.setattr(mail, "fetch_unseen", lambda **kw: [_yandex_letter("u1", 24 * 90)])
+    monkeypatch.setattr(mail, "mark_seen", lambda uids: seen.extend(uids))
+    monkeypatch.setattr(mail, "notify_owner", lambda *a, **k: None)
+    monkeypatch.setattr(mail.settings, "guest_mail_max_age_hours", 48)
+
+    report = mail.poll(session)
+    session.commit()
+
+    assert report["stale"] == 1 and report["messages"] == 0
+    assert seen == ["u1"]                                  # помечено прочитанным
+    assert session.query(MessageDraft).count() == before   # карточки нет
+
+
+def test_fresh_guest_letter_still_becomes_a_draft(tmp_path, monkeypatch):
+    from pomogaika.models import MessageDraft
+    import pomogaika.services.mail as mail
+
+    session = _mail_session(tmp_path, "fresh.db")
+    before = session.query(MessageDraft).count()
+    monkeypatch.setattr(mail, "fetch_unseen", lambda **kw: [_yandex_letter("u2", 1)])
+    monkeypatch.setattr(mail, "mark_seen", lambda uids: None)
+    monkeypatch.setattr(mail, "notify_owner", lambda *a, **k: None)
+    monkeypatch.setattr(mail.settings, "guest_mail_max_age_hours", 48)
+
+    report = mail.poll(session)
+    session.commit()
+
+    assert report["messages"] == 1 and report["stale"] == 0
+    assert session.query(MessageDraft).count() == before + 1
+
+
+def test_switch_off_leaves_guest_letters_untouched(tmp_path, monkeypatch):
+    """Рубильник выключен — письмо даже не помечается прочитанным."""
+    import pomogaika.services.mail as mail
+
+    session = _mail_session(tmp_path, "off.db")
+    seen: list[str] = []
+    monkeypatch.setattr(mail, "fetch_unseen", lambda **kw: [_yandex_letter("u3", 1)])
+    monkeypatch.setattr(mail, "mark_seen", lambda uids: seen.extend(uids))
+    monkeypatch.setattr(mail, "notify_owner", lambda *a, **k: None)
+    monkeypatch.setattr(mail.settings, "guest_mail_enabled", False)
+
+    report = mail.poll(session)
+    assert report["messages"] == 0 and report["stale"] == 0
+    assert seen == []
 # --- ссылка гостя в личку собственницы и телефон из письма ---
 
 def _guest_code(session, booking, monkeypatch):
@@ -1663,3 +1935,242 @@ def test_empty_phone_does_not_erase_saved(_prop, _db):
     second = ingest_booking(_db, guest_phone="", **common)
     assert second.booking.id == first.booking.id
     assert second.booking.guest_phone == "+79166080113"
+
+
+# ---------- первое сообщение по ссылке ----------
+
+def test_greeting_with_code_is_not_a_question():
+    from pomogaika.services.guest_links import is_greeting_only
+
+    assert is_greeting_only("Здравствуйте! Бронь KAVA-c793")
+    assert is_greeting_only("привет, бронь KAVA-7f3a")
+    assert is_greeting_only("Добрый день! KAVA-c793")
+    # а это уже вопрос, его нельзя глушить приветствием
+    assert not is_greeting_only("Здравствуйте! Бронь KAVA-c793, во сколько заезд?")
+    assert not is_greeting_only("Куда нам ехать?")
+
+
+def test_link_greeting_gets_warm_answer_without_model(tmp_path, monkeypatch):
+    """На переход по ссылке гость получает приветствие, а не «сообщение странное»."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import Booking, Property
+    from pomogaika.services.drafts import create_guest_draft
+    from pomogaika.services.guest_links import issue_link
+    from pomogaika.services.seed import seed_if_empty
+    import pomogaika.services.drafts as drafts
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'greet.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    seed_if_empty(session)
+    session.commit()
+    prop = session.query(Property).one()
+
+    booking = Booking(
+        property_id=prop.id, platform="yandex", external_id="TEST-GREET",
+        guest_name="Юрий",
+        check_in=datetime.utcnow() + timedelta(days=3),
+        check_out=datetime.utcnow() + timedelta(days=5),
+        paid=True,
+    )
+    session.add(booking)
+    session.commit()
+
+    monkeypatch.setattr("pomogaika.services.guest_links.settings.telegram_owner_username", "kava_owner")
+    url = issue_link(session, booking)
+    session.commit()
+    code = url.split("%20")[-1]
+
+    # модель не должна вызываться вовсе
+    called = []
+    monkeypatch.setattr(drafts, "classify_and_draft",
+                        lambda *a, **k: called.append(1) or (_ for _ in ()).throw(AssertionError("модель вызвана")))
+
+    draft, result = create_guest_draft(
+        session, f"Здравствуйте! Бронь {code}",
+        guest_chat_id="555", guest_user_id="555", channel="telegram_business",
+    )
+    session.commit()
+
+    assert called == []
+    assert result.question_class == "greeting"
+    assert result.needs_owner is False          # уходит сразу, без кнопки
+    assert "Юрий" in draft.draft_text
+    assert "за 2 часа до заезда" in draft.draft_text
+    assert "странно" not in draft.draft_text.lower()
+    assert "мошен" not in draft.draft_text.lower()
+
+
+def test_same_message_twice_gets_one_answer(tmp_path, monkeypatch):
+    """Гость нажал «Отправить» дважды — второй черновик не создаётся."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import MessageDraft, Property
+    from pomogaika.services.drafts import create_guest_draft
+    from pomogaika.services.seed import seed_if_empty
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'twin.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    seed_if_empty(session)
+    session.commit()
+
+    before = session.query(MessageDraft).count()
+    first, _ = create_guest_draft(session, "Есть ли парковка?", guest_chat_id="777")
+    session.commit()
+    second, _ = create_guest_draft(session, "Есть ли парковка?", guest_chat_id="777")
+    session.commit()
+
+    assert first.id == second.id
+    assert session.query(MessageDraft).count() == before + 1
+
+
+# ---------- временный режим «отвечает сама» ----------
+
+def test_autosend_flips_only_ordinary_questions(monkeypatch):
+    from pomogaika.domain.policy import check
+    import pomogaika.domain.policy as policy
+
+    monkeypatch.setattr(policy.settings, "copilot_autosend", True)
+    assert check("typical_reply").mode == "auto"          # обычный вопрос уходит сам
+    assert check("refund").mode == "never"                # деньги и возвраты — человеку
+    assert check("cancel").mode == "never"
+    assert check("extra_people").mode == "confirm"        # жалобы — человеку
+    paid_now = {"paid": True, "now": datetime(2026, 10, 22, 13, 0),
+                "check_in": datetime(2026, 10, 22, 14, 0),
+                "check_out": datetime(2026, 10, 24, 12, 0)}
+    assert check("door_code", paid_now).mode == "confirm"  # код от двери — человеку
+
+
+def test_autosend_off_by_default(monkeypatch):
+    from pomogaika.domain.policy import check
+    import pomogaika.domain.policy as policy
+
+    monkeypatch.setattr(policy.settings, "copilot_autosend", False)
+    assert check("typical_reply").mode == "confirm"
+
+
+def test_autosend_makes_copilot_answer_without_owner(monkeypatch):
+    from pomogaika.services.copilot import classify_and_draft
+    import pomogaika.domain.policy as policy
+
+    monkeypatch.setattr(policy.settings, "copilot_autosend", True)
+    result = classify_and_draft("Есть ли парковка?", None)
+    assert result.needs_owner is False
+    assert result.policy_mode == "auto"
+
+    money = classify_and_draft("Можно скидку?", None)
+    assert money.needs_owner is True                       # скидка — всегда человек
+
+
+# ---------- узлы пути гостя ----------
+
+def _booking_for_nudges(tmp_path, name, **kw):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from pomogaika.db import Base
+    from pomogaika.models import Booking, Property
+    from pomogaika.services.seed import seed_if_empty
+
+    engine = create_engine(f"sqlite:///{tmp_path / name}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    seed_if_empty(session)
+    session.commit()
+    prop = session.query(Property).one()
+    data = dict(property_id=prop.id, platform="yandex", external_id="N-1",
+                guest_name="Юрий", paid=True, guest_chat_id="999")
+    data.update(kw)
+    booking = Booking(**data)
+    session.add(booking)
+    session.commit()
+    return session, booking
+
+
+def test_day_before_asks_when_guest_arrives(tmp_path):
+    from pomogaika.services.nudges import due
+
+    now = datetime(2026, 10, 21, 15, 0)
+    session, booking = _booking_for_nudges(
+        tmp_path, "n1.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0))
+
+    plan = due(session, now=now)
+    assert [node for _, node, _ in plan] == ["pre_arrival"]
+    assert "во сколько примерно будете" in plan[0][2]
+
+
+def test_nothing_goes_to_a_guest_without_telegram(tmp_path):
+    from pomogaika.services.nudges import due
+
+    session, booking = _booking_for_nudges(
+        tmp_path, "n2.db", guest_chat_id="",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0))
+    assert due(session, now=datetime(2026, 10, 21, 15, 0)) == []
+
+
+def test_asks_how_it_went_after_check_in(tmp_path):
+    from pomogaika.services.nudges import due
+
+    session, _ = _booking_for_nudges(
+        tmp_path, "n3.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0),
+        pre_arrival_notified=True)
+
+    assert due(session, now=datetime(2026, 10, 22, 14, 20)) == []      # рано
+    plan = due(session, now=datetime(2026, 10, 22, 14, 45))
+    assert [node for _, node, _ in plan] == ["settled"]
+
+
+def test_each_node_fires_once(tmp_path, monkeypatch):
+    import pomogaika.services.nudges as nudges
+
+    session, booking = _booking_for_nudges(
+        tmp_path, "n4.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0))
+    monkeypatch.setattr(nudges, "notify_guest", lambda *a, **k: None)
+
+    now = datetime(2026, 10, 21, 15, 0)
+    assert nudges.send_due(session, now=now) == 1
+    session.commit()
+    assert nudges.send_due(session, now=now) == 0                      # второй раз молчим
+    assert booking.awaiting == "eta_in"                                # ждём ответа
+
+
+def test_guest_answer_with_time_lands_in_booking(tmp_path, monkeypatch):
+    import pomogaika.services.nudges as nudges
+
+    session, booking = _booking_for_nudges(
+        tmp_path, "n5.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0),
+        awaiting="eta_in")
+    told = []
+    monkeypatch.setattr(nudges, "notify_owner", lambda text, *a, **k: told.append(text))
+
+    said = nudges.capture_eta(session, booking, "будем часам к семи вечера")
+    assert said == "19:00"
+    assert booking.eta_in == datetime(2026, 10, 22, 19, 0)
+    assert booking.awaiting == ""                                      # вопрос закрыт
+    assert told and "приедет" in told[0]
+
+
+def test_time_is_not_captured_when_we_did_not_ask(tmp_path):
+    from pomogaika.services.nudges import capture_eta
+
+    session, booking = _booking_for_nudges(
+        tmp_path, "n6.db",
+        check_in=datetime(2026, 10, 22, 14, 0),
+        check_out=datetime(2026, 10, 24, 12, 0))
+    assert capture_eta(session, booking, "а завтрак с 10 бывает?") == ""
+    assert booking.eta_in is None

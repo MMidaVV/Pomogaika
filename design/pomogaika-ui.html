@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="ru" data-theme="muted">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Помогайка — экраны</title>
+<style>
+/* ============================================================
+   ТОКЕНЫ
+   Приглушённая тема (G-) — значения по умолчанию.
+   Тёмная (T1…, M01…) включается подменой этого же набора:
+   <html data-theme="dark">. Ни одного цвета мимо токенов —
+   иначе тема переключается наполовину.
+   ============================================================ */
+:root{
+  --bg:#f5f6f8;
+  --surf:#e9ebee;
+  --raise:#ffffff;
+  --line:#d6dae0;
+  --mut:#5f6b78;
+  --mut2:#5f6b78;
+  --ink:#15181d;
+  --or:#ff6b00;
+  --or2:#d95a00;
+  --orsoft:#ffe3cf;
+  --halo:rgba(255,107,0,.18);
+
+  /* производные: там, где макеты расходятся между темами */
+  --accent-ink:#b84d00;        /* оранжевый текст на светлом фоне */
+  --card:#ffffff;              /* сообщение, ячейка календаря, поле */
+  --field:#ffffff;
+  --ok-bg:#e2f3ea;
+  --ok-ink:#1f7a4d;
+  --chip:#dde1e6;
+  --on-accent:#ffffff;
+  --app-bg:#f3f4f6;
+  --fade:rgba(245,246,248,0);
+  --fade-to:#f5f6f8;
+
+  --ff:"Manrope","Manrope Fallback",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:14px;
+}
+:root[data-theme="dark"]{
+  --bg:#15181d;
+  --surf:#1d2127;
+  --raise:#272c34;
+  --line:#343a44;
+  --mut:#9aa3ae;
+  --mut2:#5f6b78;
+  --ink:#f1f3f6;
+  --or:#ff6b00;
+  --or2:#d95a00;
+  --orsoft:#3a2412;
+  --halo:rgba(255,107,0,.42);
+
+  --accent-ink:#ffb27a;
+  --card:#272c34;
+  --field:#15181d;
+  --ok-bg:#272c34;
+  --ok-ink:#8fd6a8;
+  --chip:#343a44;
+  --on-accent:#ffffff;
+  --app-bg:#15181d;
+  --fade:rgba(21,24,29,0);
+  --fade-to:#15181d;
+}
+
+/* Шрифт макетов — Manrope. Чтобы файл остался самодостаточным, он здесь
+   не подключается из сети: берётся системный стек. Чтобы вернуть Manrope,
+   раскомментируйте блок и подставьте base64 своих woff2 — больше ничего
+   менять не нужно, имя семейства уже первое в --ff.
+@font-face{
+  font-family:"Manrope";
+  font-style:normal;
+  font-weight:500 800;
+  font-display:swap;
+  src:url(data:font/woff2;base64,ВСТАВЬТЕ_СЮДА) format("woff2");
+}
+*/
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--app-bg);
+  color:var(--ink);
+  font-family:var(--ff);
+  font-size:16px;
+  line-height:1.4;
+  overflow-x:hidden;              /* страница не едет вбок — только шахматка */
+  -webkit-text-size-adjust:100%;
+}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--or);outline-offset:2px;border-radius:6px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* маршрутизация: показан ровно один экран */
+[data-screen]{display:none}
+[data-screen].on{display:flex;flex-direction:column}
+
+/* ============================================================
+   ТЕЛЕФОН — от 360 px
+   ============================================================ */
+.ph{
+  position:relative;
+  width:100%;
+  max-width:420px;
+  min-height:100svh;
+  margin:0 auto;
+  background:var(--bg);
+  overflow:hidden;
+}
+:root[data-theme="dark"] .ph{background:linear-gradient(180deg,var(--surf) 0,var(--bg) 100%)}
+
+.top{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;flex:none}
+.lnk{min-height:44px;display:inline-flex;align-items:center;padding:0 12px;color:var(--mut);font-weight:700;font-size:15px}
+.live{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;padding-right:16px}
+.live i{width:8px;height:8px;border-radius:4px;background:var(--or);box-shadow:0 0 10px var(--halo)}
+
+.body{padding:4px 24px 150px;flex:1}
+.kick{font-size:14px;font-weight:600;color:var(--mut)}
+.num{font-size:64px;font-weight:800;letter-spacing:-.03em;line-height:1;margin:6px 0 2px}
+.numl{font-size:18px;font-weight:700;letter-spacing:0;margin-left:6px;color:var(--mut)}
+.mut{color:var(--mut)}
+
+.li{display:flex;align-items:center;gap:14px;min-height:64px;padding:10px 0;border-top:1px solid var(--line);width:100%;text-align:left}
+.li b{display:block;font-size:17px;font-weight:700}
+.li .sub{display:block;font-size:14px;color:var(--mut)}
+.li .warn{color:var(--accent-ink)}
+.dot{flex:none;width:8px;height:8px;border-radius:4px;background:var(--mut2)}
+.dot.o{background:var(--or);box-shadow:0 0 10px var(--halo)}
+.dot.e{background:transparent;box-shadow:inset 0 0 0 2px var(--mut2)}
+.chev{margin-left:auto;color:var(--mut2);font-size:22px;line-height:1}
+
+.bottom{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:0;
+  width:100%;max-width:420px;
+  padding:12px 24px calc(22px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;gap:4px;
+  background:linear-gradient(180deg,var(--fade) 0,var(--fade-to) 30%);
+}
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  min-height:56px;border-radius:var(--r);
+  background:var(--or);color:var(--on-accent);
+  font-weight:800;font-size:17px;box-shadow:0 0 28px var(--halo);
+}
+.tbtns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.tbtn{display:flex;align-items:center;justify-content:center;min-height:44px;color:var(--mut);font-weight:700;font-size:15px}
+
+/* ============================================================
+   ДЕСКТОП — от 1000 px
+   ============================================================ */
+.app{display:none}
+
+@media (min-width:1000px){
+  .ph{display:none !important}
+  .app{
+    display:flex;
+    min-height:100vh;
+    background:var(--bg);
+    font-size:14px;
+  }
+  [data-screen].on .app{display:flex}
+
+  .rail{
+    width:220px;flex:none;padding:22px 14px;
+    display:flex;flex-direction:column;gap:2px;
+    border-right:1px solid var(--line);
+    background:var(--raise);
+  }
+  .brand{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);padding:0 12px}
+  .obj{margin:14px 12px 18px;padding:10px 12px;border-radius:10px;background:var(--surf);font-size:13px}
+  .obj b{display:block;font-size:14px}
+  .obj span{color:var(--mut);font-size:12px}
+  .nv{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:40px;padding:0 12px;border-radius:10px;font-weight:600;font-size:14px;color:var(--ink)}
+  .nv:hover{background:var(--surf)}
+  .nv.on{background:var(--orsoft);color:var(--accent-ink)}
+  .nv i{font-style:normal;display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:11px;padding:0 6px;font-size:12px;font-weight:800;background:var(--or);color:var(--on-accent)}
+  .nv.q{min-height:36px;font-weight:500;font-size:13px}
+  .nv.off{opacity:.4;cursor:default}
+  .sep{height:1px;background:var(--line);margin:10px 12px}
+
+  .main{flex:1;min-width:0;padding:22px 26px;display:flex;flex-direction:column;gap:16px}
+  .dtop{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+  .h1{font-size:24px;font-weight:800;letter-spacing:-.015em;margin:0}
+  .push{margin-left:auto}
+  .dbtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 18px;border-radius:10px;background:var(--or);color:var(--on-accent);font-weight:800}
+  .dbtn .cnt{background:var(--on-accent);color:var(--or);border-radius:10px;padding:0 7px;font-size:12px}
+
+  .card{background:var(--surf);border-radius:var(--r);padding:16px 18px;min-width:0}
+  .ch{display:flex;align-items:baseline;gap:12px;margin-bottom:10px}
+  .ch b{font-size:16px;font-weight:800}
+  .cols{display:grid;gap:16px;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .dnum{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1}
+  .row{display:flex;align-items:center;gap:12px;min-height:46px;padding:6px 0;border-top:1px solid var(--line);width:100%;text-align:left}
+  .row:first-of-type{border-top:0}
+  .row b{display:block;font-size:14px;font-weight:700}
+  .row small{display:block;font-size:12px;color:var(--mut)}
+  .tag{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:99px;font-size:11px;font-weight:800;background:var(--chip);color:var(--ink)}
+  .tag.o{background:var(--or);color:var(--on-accent)}
+  .ok{color:var(--ok-ink)}
+
+  /* шахматка — единственное место с горизонтальной прокруткой */
+  .calwrap{overflow-x:auto;overflow-y:hidden;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+  .calgrid{min-width:900px}
+  .gh{display:grid;grid-template-columns:96px repeat(var(--days),minmax(26px,1fr));height:44px}
+  .gr{display:grid;grid-template-columns:96px minmax(0,1fr);height:46px;border-top:1px solid var(--line);background:var(--card)}
+  .lab{display:flex;align-items:center;gap:8px;padding-left:12px;font-size:12px;font-weight:800;border-right:1px solid var(--line)}
+  .lab i{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;background:var(--ink);color:var(--bg);font-size:11px}
+  .dh{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:700;line-height:1.1;border-left:1px solid var(--line)}
+  .dh .w{font-size:9px;font-weight:600;color:var(--mut2)}
+  .dh.we{color:var(--ink)}
+  .dh.today .n{background:var(--or);color:var(--on-accent);border-radius:5px;padding:1px 4px;box-shadow:0 0 10px var(--halo)}
+  .dh.cfd{color:var(--accent-ink)}
+  .trk{display:grid;grid-template-rows:45px}
+  .dc{grid-row:1;border-left:1px solid var(--line)}
+  .dc.today,.dc.cfd{background:var(--orsoft)}
+  .dc.closed{background:repeating-linear-gradient(135deg,var(--line) 0 2px,transparent 2px 7px)}
+  .bk{grid-row:1;z-index:1;align-self:center;height:28px;margin:0 2px;border-radius:7px;font-size:12px;font-weight:700;display:flex;align-items:center;padding:0 8px;overflow:hidden;white-space:nowrap}
+  .bk.own{background:var(--mut2);color:#fff}
+  .bk.mir{background:var(--chip);color:var(--mut)}
+  .bk.cf{box-shadow:inset 0 0 0 2px var(--or)}
+}
+
+/* переключатель темы — служебный, в продукте его не будет */
+.themer{
+  position:fixed;right:12px;top:12px;z-index:50;
+  min-height:36px;padding:0 12px;border-radius:999px;
+  background:var(--raise);border:1px solid var(--line);
+  font-size:12px;font-weight:800;color:var(--mut);
+}
+</style>
+</head>
+<body>
+
+<button class="themer" id="themer" type="button">Тема: приглушённая</button>
+
+<!-- ======================= ЭКРАН: СЕГОДНЯ / ПУЛЬТ ======================= -->
+<div data-screen="today" class="on">
+
+  <!-- телефон: G-M01 -->
+  <div class="ph">
+    <div class="top">
+      <a class="lnk" href="#more">Закрыть</a>
+      <span class="live"><i aria-hidden="true"></i>3 требуют</span>
+    </div>
+
+    <div class="body">
+      <p class="kick">Четверг, 15 октября</p>
+      <p class="num">3<span class="numl">дела сегодня</span></p>
+
+      <div style="margin-top:14px">
+        <a class="li" href="#questions">
+          <span class="dot o" aria-hidden="true"></span>
+          <span><b>Ответить гостям</b><span class="sub">3 вопроса, первый — от Олега</span></span>
+          <span class="chev" aria-hidden="true">›</span>
+        </a>
+        <a class="li" href="#overlap">
+          <span class="dot o" aria-hidden="true"></span>
+          <span><b class="warn">Две брони на 19 октября</b><span class="sub">Денис и Светлана</span></span>
+          <span class="chev" aria-hidden="true">›</span>
+        </a>
+        <a class="li" href="#checkin">
+          <span class="dot" aria-hidden="true"></span>
+          <span><b>Заезд Олега в 15:00</b><span class="sub">ждём уборку к 14:00</span></span>
+          <span class="chev" aria-hidden="true">›</span>
+        </a>
+        <div class="li">
+          <span class="dot e" aria-hidden="true"></span>
+          <span><b class="mut">Выезд Ирины в 11:00</b><span class="sub">оплачено, всё в порядке</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <a class="btn" href="#questions">Ответить гостям</a>
+      <div class="tbtns">
+        <a class="tbtn" href="#calendar">Календарь</a>
+        <a class="tbtn" href="#more">Ещё</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- десктоп: G-T1-Pult -->
+  <div class="app">
+    <nav class="rail" aria-label="Разделы">
+      <p class="brand">Помогайка</p>
+      <div class="obj">
+        <b>KaVa у моря</b>
+        <span>ул. Гагарина · 1 из 3 объектов</span>
+      </div>
+      <a class="nv on" href="#today" aria-current="page">Пульт</a>
+      <a class="nv" href="#questions">Вопросы гостей<i>3</i></a>
+      <a class="nv" href="#calendar">Календарь</a>
+      <a class="nv" href="#bookings">Брони</a>
+      <div class="sep"></div>
+      <a class="nv q" href="#cleaner">Клинер<i>1</i></a>
+      <a class="nv q" href="#mvd">МВД<i>1</i></a>
+      <a class="nv q" href="#reports">Отчёты</a>
+      <a class="nv q" href="#platforms">Площадки</a>
+      <div class="sep"></div>
+      <span class="nv q off">Тарифы</span>
+      <span class="nv q off">Промокоды</span>
+      <span class="nv q off">Замки</span>
+    </nav>
+
+    <main class="main">
+      <div class="dtop">
+        <h1 class="h1">Октябрь 2026</h1>
+        <span class="mut">занято 20 ночей из 31 · 65% · ≈ 98 000 ₽</span>
+        <span class="tag o">! 19 окт — две брони</span>
+        <a class="dbtn push" href="#questions">Ответить гостям <span class="cnt">3</span></a>
+      </div>
+
+      <div class="card" style="padding:14px 16px">
+        <div class="calwrap">
+          <div class="calgrid" id="calgrid"><!-- строится из моковых данных ниже --></div>
+        </div>
+      </div>
+
+      <div class="cols">
+        <section class="card">
+          <div class="ch"><b>Сегодня</b><span class="mut">15 октября</span></div>
+          <p class="dnum">3</p>
+          <a class="row" href="#questions">
+            <span class="dot o" aria-hidden="true"></span>
+            <span><b>Ответить гостям</b><small>первый — от Олега</small></span>
+          </a>
+          <a class="row" href="#checkin">
+            <span class="dot" aria-hidden="true"></span>
+            <span><b>Заезд Олега в 15:00</b><small>уборка к 14:00</small></span>
+          </a>
+          <div class="row">
+            <span class="dot e" aria-hidden="true"></span>
+            <span><b class="mut">Выезд Ирины в 11:00</b><small>оплачено</small></span>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="ch"><b>Требуют вас</b><span class="tag o">3</span></div>
+          <a class="row" href="#questions"><span><b>Олег · Авито</b><small>«Можно заехать пораньше?»</small></span></a>
+          <a class="row" href="#money"><span><b>Светлана · Суточно</b><small>«Сделаете скидку?»</small></span></a>
+          <a class="row" href="#unhappy"><span><b>Денис · Островок</b><small>«Шумно от соседей»</small></span></a>
+        </section>
+
+        <section class="card">
+          <div class="ch"><b>Площадки</b></div>
+          <div class="row"><span><b>Авито</b><small class="ok">синхронизировано 4 минуты назад</small></span></div>
+          <div class="row"><span><b>Суточно</b><small class="ok">синхронизировано 4 минуты назад</small></span></div>
+          <div class="row"><span><b>Островок</b><small class="mut">календарь не подключён</small></span></div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Моковые данные — те же, что в макетах.
+   Шахматка строится из них, а не трёмя сотнями div-ов руками.
+   ============================================================ */
+var MONTH = {
+  days: 31,
+  today: 15,
+  conflict: 19,                       // день с двумя бронями
+  closed: [26],                       // закрытые даты
+  weekStart: 3,                       // 1 октября — четверг (1=пн)
+  rows: [
+    {label: "Авито", short: "А", stays: [
+      {from: 3, to: 6, kind: "mir"},
+      {from: 8, to: 10, kind: "mir"},
+      {from: 13, to: 15, name: "! Ирина", kind: "own"},
+      {from: 15, to: 18, kind: "mir"},
+      {from: 19, to: 21, kind: "mir"},
+      {from: 22, to: 25, kind: "mir"},
+      {from: 27, to: 31, name: "! Алиевы", kind: "own"}
+    ]},
+    {label: "Суточно", short: "С", stays: [
+      {from: 5, to: 9, kind: "mir"},
+      {from: 15, to: 18, name: "Олег", kind: "own"},
+      {from: 19, to: 22, name: "Денис", kind: "own", conflict: true}
+    ]},
+    {label: "Островок", short: "О", stays: [
+      {from: 19, to: 23, name: "Светлана", kind: "own", conflict: true}
+    ]}
+  ]
+};
+
+var WEEK = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+
+function weekday(day) {               // день месяца → индекс дня недели
+  return (MONTH.weekStart - 1 + day - 1) % 7;
+}
+
+function buildCalendar(host, data) {
+  var days = data.days;
+  host.style.setProperty("--days", days);
+
+  var head = document.createElement("div");
+  head.className = "gh";
+  var lab = document.createElement("span");
+  lab.className = "lab mut";
+  lab.style.fontWeight = "600";
+  lab.textContent = "площадка";
+  head.appendChild(lab);
+
+  for (var d = 1; d <= days; d++) {
+    var wd = weekday(d);
+    var cell = document.createElement("span");
+    cell.className = "dh" + (wd > 4 ? " we" : "") +
+                     (d === data.today ? " today" : "") +
+                     (d === data.conflict ? " cfd" : "");
+    var n = document.createElement("span");
+    n.className = "n";
+    n.textContent = String(d);
+    var w = document.createElement("span");
+    w.className = "w";
+    w.textContent = WEEK[wd];
+    cell.appendChild(n);
+    cell.appendChild(w);
+    head.appendChild(cell);
+  }
+  host.appendChild(head);
+
+  data.rows.forEach(function (row) {
+    var gr = document.createElement("div");
+    gr.className = "gr";
+
+    var label = document.createElement("div");
+    label.className = "lab";
+    var mark = document.createElement("i");
+    mark.setAttribute("aria-hidden", "true");
+    mark.textContent = row.short;
+    label.appendChild(mark);
+    label.appendChild(document.createTextNode(row.label));
+    gr.appendChild(label);
+
+    var trk = document.createElement("div");
+    trk.className = "trk";
+    /* полсуток на колонку: заезд и выезд в одном дне не слипаются */
+    trk.style.gridTemplateColumns = "repeat(" + days * 2 + ",minmax(0,1fr))";
+
+    for (var d = 1; d <= days; d++) {
+      var cell = document.createElement("div");
+      cell.className = "dc" +
+        (d === data.today ? " today" : "") +
+        (d === data.conflict ? " cfd" : "") +
+        (data.closed.indexOf(d) >= 0 ? " closed" : "");
+      cell.style.gridColumn = (d * 2 - 1) + " / " + (d * 2 + 1);
+      trk.appendChild(cell);
+    }
+
+    row.stays.forEach(function (stay) {
+      var bar = document.createElement("div");
+      bar.className = "bk " + (stay.kind || "mir") + (stay.conflict ? " cf" : "");
+      bar.style.gridColumn = (stay.from * 2) + " / " + (stay.to * 2);
+      if (stay.name) { bar.textContent = stay.name; }
+      else { bar.setAttribute("aria-hidden", "true"); }
+      trk.appendChild(bar);
+    });
+
+    gr.appendChild(trk);
+    host.appendChild(gr);
+  });
+}
+
+var grid = document.getElementById("calgrid");
+if (grid) { buildCalendar(grid, MONTH); }
+
+/* ============================================================
+   Маршрут: один экран показан, остальные скрыты.
+   ============================================================ */
+function show(name) {
+  var screens = document.querySelectorAll("[data-screen]");
+  var found = false;
+  for (var i = 0; i < screens.length; i++) {
+    var on = screens[i].getAttribute("data-screen") === name;
+    screens[i].classList.toggle("on", on);
+    if (on) { found = true; }
+  }
+  if (!found && screens.length) { screens[0].classList.add("on"); }
+  window.scrollTo(0, 0);
+}
+
+function route() {
+  show((location.hash || "#today").slice(1));
+}
+window.addEventListener("hashchange", route);
+route();
+
+/* ============================================================
+   Тема: подмена одного набора переменных.
+   ============================================================ */
+var themer = document.getElementById("themer");
+var LABEL = {muted: "Тема: приглушённая", dark: "Тема: тёмная"};
+
+function setTheme(name) {
+  document.documentElement.setAttribute("data-theme", name);
+  themer.textContent = LABEL[name];
+  try { localStorage.setItem("pomogaika-theme", name); } catch (e) { /* приватный режим */ }
+}
+
+themer.addEventListener("click", function () {
+  var now = document.documentElement.getAttribute("data-theme");
+  setTheme(now === "dark" ? "muted" : "dark");
+});
+
+try {
+  var saved = localStorage.getItem("pomogaika-theme");
+  if (saved === "dark" || saved === "muted") { setTheme(saved); }
+} catch (e) { /* читать нечего — остаётся приглушённая */ }
+</script>
+</body>
+</html>

@@ -16,7 +16,9 @@ import imaplib
 import re
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from email.header import decode_header, make_header
+from email.utils import parsedate_to_datetime
 
 from pomogaika.config import settings
 
@@ -46,6 +48,9 @@ class Letter:
     reply_to: str = ""
     recipient: str = ""
     message_id: str = ""
+    # Дата письма из заголовка: по ней отличаем свежее сообщение гостя
+    # от разбора старых непрочитанных писем.
+    sent_at: datetime | None = None
 
 
 def configured() -> bool:
@@ -100,6 +105,17 @@ def _is_platform(sender: str) -> bool:
     return any(domain in low for domain in PLATFORM_SENDERS)
 
 
+def _sent_at(raw: str | None) -> datetime | None:
+    """Дата письма. Кривой или отсутствующий заголовок — не повод падать."""
+    if not raw:
+        return None
+    try:
+        value = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    return value.replace(tzinfo=None) if value and value.tzinfo else value
+
+
 def fetch_unseen(limit: int = 20, *, unseen_only: bool = True) -> list[Letter]:
     """Письма от площадок. Прочитанными помечает mark_seen, не мы.
 
@@ -134,6 +150,7 @@ def fetch_unseen(limit: int = 20, *, unseen_only: bool = True) -> list[Letter]:
                 reply_to=_decode(message.get("Reply-To")),
                 recipient=_decode(message.get("To")),
                 message_id=_decode(message.get("Message-ID")),
+                sent_at=_sent_at(message.get("Date")),
             ))
     finally:
         try:

@@ -45,6 +45,7 @@ from pomogaika.services.cleaning import (
 )
 from pomogaika.services.codes import issue_code
 from pomogaika.services.drafts import apply_draft_action, create_guest_draft
+from pomogaika.services.outbox import can_send_mail, is_mail, send_mail_draft
 from pomogaika.services.knowledge import apply_knowledge_edit, parse_knowledge_edit
 from pomogaika.services.miniapp import build_miniapp
 from pomogaika.services.notify import notify_guest, notify_owner
@@ -442,7 +443,25 @@ def draft_action(draft_id: int, body: DraftAction, session: Session = Depends(ge
         apply_draft_action(session, draft, body.action, body.text)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"id": draft.id, "status": draft.status, "draft_text": draft.draft_text}
+
+    # Черновик из чата площадки уходит письмом прямо отсюда: у мини-аппа
+    # нет экземпляра бота, а транспорт у почты свой.
+    delivered = None
+    if is_mail(draft) and draft.status in ("sent", "sent_edited"):
+        if not can_send_mail(draft):
+            raise HTTPException(409, "нет адреса для ответа или не настроен SMTP")
+        try:
+            send_mail_draft(draft, draft.draft_text)
+            delivered = "mail"
+        except Exception as exc:  # noqa: BLE001 — показываем человеку, что не ушло
+            raise HTTPException(502, f"письмо не отправлено: {exc}") from exc
+
+    return {
+        "id": draft.id,
+        "status": draft.status,
+        "draft_text": draft.draft_text,
+        "delivered": delivered,
+    }
 
 
 @app.post("/api/email")

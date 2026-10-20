@@ -3,14 +3,14 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
-$server  = "root@<SERVER_IP>"
+$server  = "root@109.71.247.247"
 $archive = Join-Path $env:TEMP "pomogaika.tar.gz"
 
 # .env, data/, dialogs/, .venv на сервер не едут: секреты, база и реальные переписки остаются локально
 tar --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache `
     --exclude=data --exclude=dialogs --exclude=techlead-archive `
     --exclude=.env --exclude=*.zip --exclude=*.pdf --exclude=.git `
-    -czf $archive src ops tests docs deploy requirements.txt pytest.ini README.md .env.example
+    -czf $archive src ops tests docs deploy tools requirements.txt pytest.ini README.md .env.example
 
 Write-Host "Архив: $([math]::Round((Get-Item $archive).Length/1KB)) KB"
 
