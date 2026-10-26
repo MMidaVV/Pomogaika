@@ -220,6 +220,14 @@ async def _send_to_guest(bot: Bot, draft: MessageDraft, text: str) -> None:
             raise RuntimeError("нет адреса для ответа или не настроен SMTP")
         await asyncio.to_thread(send_mail_draft, draft, text)
         return
+    if draft.channel == "whatsapp":
+        from pomogaika.platforms.whatsapp_local import deliver as deliver_whatsapp
+
+        chat = draft.external_chat_id or draft.guest_chat_id
+        if not chat:
+            raise RuntimeError("нет чата WhatsApp")
+        await asyncio.to_thread(deliver_whatsapp, chat, text)
+        return
     if not draft.guest_chat_id:
         raise RuntimeError("нет чата гостя")
     kwargs: dict = {"chat_id": int(draft.guest_chat_id), "text": text}
@@ -861,7 +869,12 @@ async def cb_bind(query: CallbackQuery) -> None:
         if not draft or not booking:
             await query.answer("Уже нет")
             return
-        bind_guest(booking, draft.guest_user_id, draft.guest_chat_id, draft.business_connection_id)
+        if draft.channel == "whatsapp":
+            from pomogaika.services.guest import bind_whatsapp
+
+            bind_whatsapp(booking, draft.external_chat_id or draft.guest_chat_id)
+        else:
+            bind_guest(booking, draft.guest_user_id, draft.guest_chat_id, draft.business_connection_id)
         result = classify_and_draft(draft.guest_text, booking)
         draft.draft_text = result.draft
         draft.booking_id = booking.id
@@ -942,7 +955,7 @@ async def _owner_send_code(message: Message, booking_id: int, text: str) -> None
             await message.answer(payload)
             return
         chat = booking.guest_chat_id
-        if not chat:
+        if not chat and booking.guest_channel != "whatsapp":
             draft = (
                 session.query(MessageDraft)
                 .filter(MessageDraft.booking_id == booking.id, MessageDraft.guest_chat_id != "")
@@ -954,7 +967,16 @@ async def _owner_send_code(message: Message, booking_id: int, text: str) -> None
                 booking.guest_chat_id = chat
                 booking.business_connection_id = draft.business_connection_id
                 session.commit()
-        if chat:
+        if booking.guest_channel == "whatsapp" and booking.guest_whatsapp_chat_id:
+            from pomogaika.services.notify import deliver_to_guest
+
+            try:
+                deliver_to_guest(booking, payload)
+            except RuntimeError as exc:
+                await message.answer(f"Код записан, в WhatsApp не ушло: {exc}")
+                return
+            await message.answer(f"Отправила в WhatsApp. В журнале только хвост **{booking.code_hint}.")
+        elif chat:
             notify_guest(chat, payload, booking.business_connection_id)
             await message.answer(f"Отправила гостю. В журнале только хвост **{booking.code_hint}.")
         else:

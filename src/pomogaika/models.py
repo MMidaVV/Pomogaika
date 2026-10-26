@@ -71,6 +71,10 @@ class Booking(Base):
     guest_telegram_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     guest_chat_id: Mapped[str] = mapped_column(String(64), default="")
     business_connection_id: Mapped[str] = mapped_column(String(128), default="")
+    # Куда писать, если гость пришёл из WhatsApp. Не затирает телеграмный чат.
+    guest_whatsapp_chat_id: Mapped[str] = mapped_column(String(200), default="")
+    # Последний канал, в котором гость написал: telegram | whatsapp | пусто.
+    guest_channel: Mapped[str] = mapped_column(String(16), default="")
     guest_phone: Mapped[str] = mapped_column(String(20), default="")
     code_hint: Mapped[str] = mapped_column(String(8), default="")
     code_issued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -241,6 +245,8 @@ class GuestLink(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     guest_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Кто забрал код: "telegram:123" или "whatsapp:79...@c.us". Один код — один человек.
+    guest_identity: Mapped[str] = mapped_column(String(200), default="")
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 

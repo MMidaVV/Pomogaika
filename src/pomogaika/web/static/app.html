@@ -1063,7 +1063,8 @@ function openBooking(id) {
       <div class="v">${esc(objectOf(b.property_id).title)}<br><span class="sub">${esc(objectOf(b.property_id).address)}</span></div></div>
     <div class="fact"><div class="k">Гостей</div><div class="v">${b.guests}</div></div>
     ${b.guest_phone ? `<div class="fact"><div class="k">Телефон</div><div class="v"><a href="tel:${esc(b.guest_phone)}">${esc(b.guest_phone)}</a></div></div>` : ""}
-    ${b.guest_telegram_user_id ? `<div class="fact"><div class="k">Telegram</div><div class="v">Гость в Telegram${b.guest_since ? " с " + dmy(b.guest_since).slice(0, 5) : ""}</div></div>` : `<button class="btn" id="b-link">Ссылка для гостя</button>`}
+    ${b.guest_telegram_user_id ? `<div class="fact"><div class="k">Telegram</div><div class="v">Гость в Telegram${b.guest_since ? " с " + dmy(b.guest_since).slice(0, 5) : ""}</div></div>` : `<button class="btn" id="b-link-tg">Ссылка в Telegram</button>`}
+    ${b.guest_whatsapp ? `<div class="fact"><div class="k">WhatsApp</div><div class="v">Гость в WhatsApp${b.guest_since ? " с " + dmy(b.guest_since).slice(0, 5) : ""}</div></div>` : `<button class="btn" id="b-link-wa">Ссылка в WhatsApp</button>`}
     ${conflictNote}
     ${b.paid ? "" : `<button class="btn solid" id="b-paid">Отметить оплату</button>`}
     <button class="btn" id="b-code">Выдать код калитки</button>
@@ -1071,8 +1072,10 @@ function openBooking(id) {
     <button class="btn" id="b-outcome">Итог проживания</button>
     <button class="btn ghost" data-close>Закрыть</button>`);
   $("b-outcome").onclick = () => openOutcome(id);
-  const linkBtn = $("b-link");
-  if (linkBtn) linkBtn.onclick = () => openGuestLink(id);
+  const linkTg = $("b-link-tg");
+  if (linkTg) linkTg.onclick = () => openGuestLink(id, "telegram");
+  const linkWa = $("b-link-wa");
+  if (linkWa) linkWa.onclick = () => openGuestLink(id, "whatsapp");
   const paid = $("b-paid");
   if (paid) paid.onclick = async () => { await api(`/api/bookings/${id}/paid`, {}); haptic("ok"); closeAll(); await load(true); toast("Оплата отмечена"); };
   $("b-code").onclick = async () => {
@@ -1088,10 +1091,11 @@ function openBooking(id) {
   };
 }
 
-async function openGuestLink(id) {
+async function openGuestLink(id, channel) {
+  const title = channel === "whatsapp" ? "Ссылка в WhatsApp" : "Ссылка в Telegram";
   let res;
   try {
-    res = await api(`/api/bookings/${id}/guest-link`, {});
+    res = await api(`/api/bookings/${id}/guest-link`, { channel: channel || "telegram" });
   } catch (e) {
     haptic("error");
     toast(e.message || "Не удалось сделать ссылку");
@@ -1101,7 +1105,7 @@ async function openGuestLink(id) {
   haptic("ok");
   openSheet(`
     <div class="sheet-head">
-      <div><h3>Ссылка для гостя</h3><div class="sub">до ${esc(dmy(res.expires_at))}</div></div>
+      <div><h3>${title}</h3><div class="sub">до ${esc(dmy(res.expires_at))}. Код один на оба канала</div></div>
       <button class="x" data-close>×</button>
     </div>
     <div class="fact"><div class="k">Ссылка</div><div class="v" style="word-break:break-all">${esc(res.url)}</div></div>
@@ -1454,7 +1458,9 @@ function renderChat() {
       const title = d.channel === "avito" && d.peer ? d.peer : (d.guest_text || "").slice(0, 34);
       const sub = d.channel === "avito"
         ? [d.item, (d.guest_text || "").slice(0, 48)].filter(Boolean).join(" · ")
-        : `${d.question_class}${d.matched_faq ? " · " + d.matched_faq : ""}`;
+        : d.channel === "whatsapp"
+          ? `WhatsApp · ${(d.guest_text || "").slice(0, 48)}`
+          : `${d.question_class}${d.matched_faq ? " · " + d.matched_faq : ""}`;
       return `<button class="nrow" data-d="${d.id}">
       <span class="ic">${ICONS.ticket}</span>
       <span class="tt"><b>${esc(title)}</b><span>${esc(sub)}</span></span>
@@ -1477,8 +1483,8 @@ function renderChat() {
   const t = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   $("chat").innerHTML = `
     <div class="chat-head"><h3>Чат с гостем</h3><button class="x" id="chat-x">×</button></div>
-    <div class="chat-sub"><button class="x" id="chat-back">«</button><b>${esc(d.channel === "avito" && d.peer ? d.peer : "Гость")}</b>
-      <span class="schip amber">${esc(d.channel === "avito" ? "Авито" : d.question_class)}</span></div>
+    <div class="chat-sub"><button class="x" id="chat-back">«</button><b>${esc((d.channel === "avito" || d.channel === "whatsapp") && d.peer ? d.peer : "Гость")}</b>
+      <span class="schip amber">${esc(d.channel === "avito" ? "Авито" : d.channel === "whatsapp" ? "WhatsApp" : d.question_class)}</span></div>
     <div class="chat-body">
       <div class="chat-day">${d.item ? esc(d.item) + " · " : ""}ничего не уходит, пока не нажмёте кнопку</div>
       ${threadBubbles(d, t)}
@@ -1496,7 +1502,7 @@ function renderChat() {
     try {
       await api("/api/drafts/" + d.id, { action, text: text || null });
       haptic("ok"); chatDraft = null; await load(true); renderChat();
-      const sent = d.channel === "avito" ? "Отправлено в Авито" : "Ответ ушёл гостю";
+      const sent = d.channel === "avito" ? "Отправлено в Авито" : d.channel === "whatsapp" ? "Отправлено в WhatsApp" : "Ответ ушёл гостю";
       toast(action === "send" ? sent : action === "edit" ? (d.channel === "avito" ? "Правка отправлена в Авито" : "Правка отправлена") : "Оставила вам");
     } catch (e) { haptic("error"); toast("Ошибка: " + e.message); }
   };

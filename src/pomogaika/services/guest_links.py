@@ -22,11 +22,18 @@ GUEST_PITCH = (
 )
 
 
-def issue_link(session: Session, booking: Booking) -> str:
-    """Действующая ссылка на эту бронь. Повторный вызов не создаёт новый код."""
+def issue_link(session: Session, booking: Booking, channel: str = "telegram") -> str:
+    """Действующая ссылка на эту бронь. Повторный вызов не создаёт новый код.
+
+    Код один на оба канала. Меняется только адрес: личка Telegram или WhatsApp.
+    """
+    kind = _channel(channel)
     username = _username()
-    if not username:
+    phone = _whatsapp_phone()
+    if kind == "telegram" and not username:
         raise ValueError("В настройках нет username собственницы в Telegram")
+    if kind == "whatsapp" and not phone:
+        raise ValueError("В настройках нет номера WhatsApp")
     row = active_link(session, booking.id)
     if row is None:
         # срок всегда «выезд плюс сутки», поэтому повтор после этой даты
@@ -48,26 +55,31 @@ def issue_link(session: Session, booking: Booking) -> str:
         )
         session.add(row)
         session.flush()
+    if kind == "whatsapp":
+        return _wa_url(phone, row.id)
     return _url(username, row.id)
 
 
-def resolve_code(session: Session, text: str, user) -> Booking | None:
+def resolve_code(session: Session, text: str, user, channel: str = "telegram") -> Booking | None:
     """Найти код в тексте. Просроченный, отозванный и чужой аккаунт — как будто кода нет."""
-    uid = _uid(user)
-    if not uid:
+    ident = _identity(channel, user)
+    if not ident:
         return None
     now = datetime.now()
     for token in _CODE.findall(text or ""):
         row = _by_code(session, token)
         if row is None or row.revoked or row.expires_at <= now:
             continue
-        if row.guest_user_id and row.guest_user_id != uid:
+        claimed = _claimed(row)
+        if claimed and claimed != ident:
             continue
         booking = session.get(Booking, row.booking_id)
         if booking is None or booking.status == "cancelled":
             continue
-        if row.guest_user_id is None:
-            row.guest_user_id = uid
+        if not claimed:
+            row.guest_identity = ident
+            if ident.startswith("telegram:"):
+                row.guest_user_id = _uid(user)
             row.used_at = now
             session.flush()
         return booking
@@ -97,8 +109,48 @@ def active_link(session: Session, booking_id: int, *, now: datetime | None = Non
     )
 
 
+def _channel(channel: str) -> str:
+    kind = (channel or "telegram").strip().lower()
+    if kind not in {"telegram", "whatsapp"}:
+        raise ValueError("канал: telegram или whatsapp")
+    return kind
+
+
 def _username() -> str:
     return (settings.telegram_owner_username or "").strip().lstrip("@")
+
+
+def _whatsapp_phone() -> str:
+    digits = re.sub(r"\D", "", settings.whatsapp_owner_phone or "")
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
+    if len(digits) == 10:
+        digits = "7" + digits
+    return digits if len(digits) >= 11 else ""
+
+
+def _identity(channel: str, user) -> str:
+    kind = "whatsapp" if (channel or "").strip().lower() == "whatsapp" else "telegram"
+    if kind == "whatsapp":
+        raw = str(user or "").strip()
+        if "@" not in raw:
+            digits = re.sub(r"\D", "", raw)
+            if len(digits) == 11 and digits.startswith("8"):
+                digits = "7" + digits[1:]
+            if len(digits) == 10:
+                digits = "7" + digits
+            raw = f"{digits}@c.us" if digits else ""
+        return f"whatsapp:{raw}" if raw else ""
+    uid = _uid(user)
+    return f"telegram:{uid}" if uid else ""
+
+
+def _claimed(row: GuestLink) -> str:
+    if row.guest_identity:
+        return row.guest_identity
+    if row.guest_user_id:
+        return f"telegram:{row.guest_user_id}"
+    return ""
 
 
 def _prefix(code: str) -> str:
@@ -117,6 +169,11 @@ def _new_code(session: Session, prefix: str) -> str:
 def _url(username: str, code: str) -> str:
     text = quote(_PREFILL.format(code=code), safe="")
     return f"https://t.me/{username}?text={text}"
+
+
+def _wa_url(phone: str, code: str) -> str:
+    text = quote(_PREFILL.format(code=code), safe="")
+    return f"https://wa.me/{phone}?text={text}"
 
 
 def _by_code(session: Session, code: str) -> GuestLink | None:

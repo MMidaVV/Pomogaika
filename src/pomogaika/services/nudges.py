@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from pomogaika.models import Booking
 from pomogaika.services.bookings import ACTIVE
-from pomogaika.services.notify import notify_guest, notify_owner
+from pomogaika.services.notify import deliver_to_guest, notify_owner
 
 log = logging.getLogger("pomogaika.nudges")
 
@@ -29,6 +29,8 @@ AFTER_ARRIVAL = timedelta(minutes=40)
 
 
 def _can_write(booking: Booking) -> bool:
+    if booking.guest_channel == "whatsapp":
+        return bool(booking.guest_whatsapp_chat_id)
     return bool(booking.guest_chat_id)
 
 
@@ -100,7 +102,7 @@ def send_due(session: Session, *, now: datetime | None = None) -> int:
     sent = 0
     for booking, node, text in due(session, now=now):
         try:
-            notify_guest(booking.guest_chat_id, text, booking.business_connection_id or "")
+            deliver_to_guest(booking, text)
         except Exception:  # noqa: BLE001 — одно непрошедшее сообщение не ломает цикл
             log.exception("не отправила гостю %s", node)
             continue

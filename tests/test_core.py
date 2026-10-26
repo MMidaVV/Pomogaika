@@ -1865,6 +1865,63 @@ def test_guest_link_endpoint_reuses_code(_prop, _db, monkeypatch):
     assert first["url"].startswith("https://t.me/galina?text=")
 
 
+def test_whatsapp_link_uses_same_code(_prop, _db, monkeypatch):
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    from pomogaika.config import settings
+    from pomogaika.models import GuestLink
+    from pomogaika.services.guest_links import issue_link
+    from pomogaika.web.app import GuestLinkIn, guest_link_api
+
+    monkeypatch.setattr(settings, "whatsapp_owner_phone", "8 902 121-02-05")
+    start = datetime.now() + timedelta(days=10)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-wa", guest_name="Евгения",
+        check_in=start, check_out=start + timedelta(days=3),
+    )
+    _guest_code(_db, booking, monkeypatch)
+    telegram = guest_link_api(booking.id, _db)
+    whatsapp = guest_link_api(booking.id, _db, GuestLinkIn(channel="whatsapp"))
+    assert telegram["code"] == whatsapp["code"]
+    assert _db.query(GuestLink).count() == 1
+    assert whatsapp["url"].startswith("https://wa.me/79021210205?text=")
+    text = unquote(parse_qs(urlparse(whatsapp["url"]).query)["text"][0])
+    assert text == f"Здравствуйте! Бронь {whatsapp['code']}"
+    issue_link(_db, booking, "telegram")
+    assert _db.query(GuestLink).count() == 1
+
+
+def test_whatsapp_code_is_one_person_across_channels(_prop, _db, monkeypatch):
+    from pomogaika.services.drafts import create_guest_draft
+    from pomogaika.services.guest_links import resolve_code
+
+    start = datetime.now() + timedelta(days=10)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-wa-2",
+        check_in=start, check_out=start + timedelta(days=3),
+    )
+    row = _guest_code(_db, booking, monkeypatch)
+    text = f"Здравствуйте! Бронь {row.id}"
+    jid = "79001112233@c.us"
+    assert resolve_code(_db, text, jid, "whatsapp").id == booking.id
+    assert row.guest_identity == f"whatsapp:{jid}"
+    assert resolve_code(_db, text, "79009998877@c.us", "whatsapp") is None
+    assert resolve_code(_db, text, 501) is None
+
+    draft, result = create_guest_draft(
+        _db, text,
+        guest_chat_id=jid[:64], guest_user_id=jid,
+        channel="whatsapp", external_chat_id=jid,
+    )
+    assert result.bound_by_code is True
+    assert draft.booking_id == booking.id
+    assert draft.external_chat_id == jid
+    assert booking.guest_whatsapp_chat_id == jid
+    assert booking.guest_channel == "whatsapp"
+    assert booking.guest_telegram_user_id is None
+    assert booking.guest_chat_id == ""
+
+
 def test_business_message_with_code_binds_draft(_prop, _db, monkeypatch):
     from datetime import datetime, timedelta
 
@@ -2138,7 +2195,7 @@ def test_each_node_fires_once(tmp_path, monkeypatch):
         tmp_path, "n4.db",
         check_in=datetime(2026, 10, 22, 14, 0),
         check_out=datetime(2026, 10, 24, 12, 0))
-    monkeypatch.setattr(nudges, "notify_guest", lambda *a, **k: None)
+    monkeypatch.setattr(nudges, "deliver_to_guest", lambda *a, **k: None)
 
     now = datetime(2026, 10, 21, 15, 0)
     assert nudges.send_due(session, now=now) == 1

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pomogaika.db import SessionLocal
 from pomogaika.models import MessageDraft, Property
 from pomogaika.services.copilot import CopilotResult, booking_label, classify_and_draft
-from pomogaika.services.guest import bind_guest, match_booking
+from pomogaika.services.guest import bind_guest, bind_whatsapp, match_booking
 from pomogaika.services.nudges import capture_eta
 from pomogaika.services.guest_links import is_greeting_only, resolve_code, welcome_text
 from pomogaika.services.seed import audit, emit
@@ -58,9 +58,11 @@ def create_guest_draft(
     business_connection_id: str = "",
     channel: str = "web",
     booking_id: int | None = None,
+    external_chat_id: str = "",
 ) -> tuple[MessageDraft, CopilotResult]:
     prop = session.query(Property).one()
-    linked = resolve_code(session, text, guest_user_id)
+    link_channel = "whatsapp" if channel == "whatsapp" else "telegram"
+    linked = resolve_code(session, text, guest_user_id, link_channel)
     if linked is not None:
         booking_id = linked.id
     booking = match_booking(
@@ -71,7 +73,10 @@ def create_guest_draft(
         booking_id=booking_id,
     )
     if booking:
-        bind_guest(booking, guest_user_id, guest_chat_id, business_connection_id)
+        if channel == "whatsapp":
+            bind_whatsapp(booking, external_chat_id or guest_chat_id)
+        else:
+            bind_guest(booking, guest_user_id, guest_chat_id, business_connection_id)
     if booking is not None and booking.awaiting:
         said = capture_eta(session, booking, text)
         if said:
@@ -96,6 +101,7 @@ def create_guest_draft(
                 guest_chat_id=guest_chat_id, guest_user_id=guest_user_id,
                 business_connection_id=business_connection_id,
                 channel=channel, booking_id=booking.id,
+                external_chat_id=(external_chat_id or "")[:200],
             )
             session.add(draft)
             session.flush()
@@ -136,6 +142,7 @@ def create_guest_draft(
         guest_user_id=guest_user_id,
         business_connection_id=business_connection_id,
         channel=channel,
+        external_chat_id=(external_chat_id or "")[:200],
         booking_id=result.booking_id,
     )
     session.add(draft)

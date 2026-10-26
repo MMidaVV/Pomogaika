@@ -121,6 +121,7 @@ def _booking_card(booking: Booking, *, conflict_ids: set[int], today: date,
         "code_hint": booking.code_hint,
         "guest_phone": booking.guest_phone or "",
         "guest_telegram_user_id": booking.guest_telegram_user_id,
+        "guest_whatsapp": bool(booking.guest_whatsapp_chat_id),
         "guest_since": guest_since.isoformat() if guest_since else None,
         # откуда знаем про эту занятость: площадки, которые её показывают
         "sources": src,
@@ -411,7 +412,7 @@ def build_miniapp(
                 "question_class": d.question_class,
                 "matched_faq": d.matched_faq,
                 "channel": d.channel,
-                "peer": d.guest_user_id if d.channel == "avito" else "",
+                "peer": d.guest_user_id if d.channel in {"avito", "whatsapp"} else "",
                 "item": d.business_connection_id if d.channel == "avito" else "",
                 "thread": _draft_thread(d),
             }

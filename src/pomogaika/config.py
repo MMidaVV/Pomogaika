@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     telegram_owner_user_id: int | None = None
     # Username собственницы для ссылки гостю в личку, без @. Не имя бота.
     telegram_owner_username: str = ""
+    # Номер личного WhatsApp, на который ведёт ссылка гостя. Без плюса: 79XXXXXXXXX.
+    whatsapp_owner_phone: str = ""
+    # Локальный процесс whatsapp-web.js. Слушает только эту машину.
+    whatsapp_base_url: str = "http://127.0.0.1:8792"
     # Номера поддержки площадок и свой номер: в гостевой телефон их не пишем.
     guest_phone_blocklist: str = ""
     telegram_cleaner_user_id: int | None = None

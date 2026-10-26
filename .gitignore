@@ -18,3 +18,9 @@ techlead-archive/
 tools/avito-browser/node_modules/
 tools/avito-browser/profile/
 tools/avito-browser/logs/
+
+# Эксперимент WhatsApp: сессия связанного устройства и тексты переписок
+tools/whatsapp-web/node_modules/
+tools/whatsapp-web/session/
+tools/whatsapp-web/logs/
+tools/whatsapp-web/.wwebjs_cache/

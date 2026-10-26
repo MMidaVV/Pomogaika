@@ -19,6 +19,7 @@ from pomogaika.domain.dates import parse_close_command
 from pomogaika.models import AuditLog, Block, Booking, BookingConflict, Event, Listing, MessageDraft, Owner, Property, StayOutcome, Task
 from pomogaika.platforms.avito_local import deliver as deliver_avito
 from pomogaika.platforms.avito_local import read_thread as read_avito_thread
+from pomogaika.platforms.whatsapp_local import deliver as deliver_whatsapp
 from pomogaika.platforms.email_parser import parse_platform_email
 from pomogaika.platforms.ical import fetch_ics
 from pomogaika.services.llm import enabled as llm_enabled
@@ -58,7 +59,7 @@ from pomogaika.services.drafts import (
 from pomogaika.services.outbox import can_send_mail, is_mail, send_mail_draft
 from pomogaika.services.knowledge import apply_knowledge_edit, parse_knowledge_edit
 from pomogaika.services.miniapp import build_miniapp
-from pomogaika.services.notify import notify_guest, notify_owner
+from pomogaika.services.notify import deliver_to_guest, notify_guest, notify_owner
 from pomogaika.services.ops import ensure_runtime
 from pomogaika.services.outcome import as_dict as outcome_dict, save as save_outcome, summary as outcome_summary
 from pomogaika.services.properties import create_property
@@ -129,6 +130,9 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.middleware("http")
 async def telegram_auth(request: Request, call_next):
     """Ручки открыты только мини-приложению Telegram: с подписанным initData от своего человека."""
+    host = request.client.host if request.client else ""
+    if request.url.path == "/api/whatsapp/message" and host in {"127.0.0.1", "::1"}:
+        return await call_next(request)
     if request.url.path.startswith("/api/") and auth.enabled():
         who = auth.check(
             request.headers.get("X-Telegram-Init-Data", ""),
@@ -487,6 +491,14 @@ def draft_action(draft_id: int, body: DraftAction, session: Session = Depends(ge
     if not draft:
         raise HTTPException(404)
     delivered = None
+    if draft.channel == "whatsapp" and body.action in ("send", "edit"):
+        outgoing = (body.text or "").strip() if body.action == "edit" else (draft.draft_text or "").strip()
+        if not outgoing:
+            raise HTTPException(400, "пустой ответ")
+        try:
+            deliver_whatsapp(draft.external_chat_id or draft.guest_chat_id, outgoing)
+        except RuntimeError as exc:
+            raise HTTPException(502, str(exc)) from exc
     if draft.channel == "avito" and body.action in ("send", "edit"):
         outgoing = (body.text or "").strip() if body.action == "edit" else (draft.draft_text or "").strip()
         if not outgoing:
@@ -701,7 +713,12 @@ def issue_code_api(booking_id: int, body: CodeIn, session: Session = Depends(get
     ok, payload = issue_code(session, booking, body.text)
     if not ok:
         return {"ok": False, "reason": payload, "code": None}
-    if booking.guest_chat_id:
+    if booking.guest_channel == "whatsapp" and booking.guest_whatsapp_chat_id:
+        try:
+            deliver_to_guest(booking, payload)
+        except RuntimeError as exc:
+            return {"ok": True, "hint": booking.code_hint, "note": f"Код записан, в WhatsApp не ушло: {exc}"}
+    elif booking.guest_chat_id:
         notify_guest(booking.guest_chat_id, payload, booking.business_connection_id)
     return {
         "ok": True,
@@ -722,13 +739,89 @@ def mark_paid(booking_id: int, session: Session = Depends(get_session)) -> dict:
     return {"ok": True, "booking": _booking_dict(booking)}
 
 
+class GuestLinkIn(BaseModel):
+    channel: str = "telegram"
+
+
+class WhatsAppMessageIn(BaseModel):
+    chat_id: str
+    text: str
+    message_id: str = ""
+    mode: str = "approve"
+
+
+@app.post("/api/whatsapp/message")
+def whatsapp_message(body: WhatsAppMessageIn, session: Session = Depends(get_session)) -> dict:
+    """Входящее из локального WhatsApp. Черновик тот же, что у Telegram."""
+    chat_id = (body.chat_id or "").strip()
+    text = (body.text or "").strip()
+    if not chat_id or not text:
+        raise HTTPException(400, "нужны chat_id и text")
+    if chat_id.endswith("@g.us") or chat_id == "status@broadcast":
+        raise HTTPException(400, "только личный чат")
+    draft, result = create_guest_draft(
+        session,
+        text,
+        guest_chat_id=chat_id[:64],
+        guest_user_id=chat_id,
+        channel="whatsapp",
+        external_chat_id=chat_id,
+    )
+    delivered = False
+    mode = (body.mode or "approve").strip().lower()
+    if mode == "auto":
+        try:
+            deliver_whatsapp(chat_id, draft.draft_text)
+        except RuntimeError as exc:
+            draft.status = "pending_owner"
+            notify_owner(
+                f"WhatsApp · {chat_id.split('@')[0]}\n{text}\n\nЧерновик не ушёл: {exc}\n\n{draft.draft_text}",
+                [[{"text": "Отправить", "callback_data": f"send:{draft.id}"}]],
+            )
+            return {
+                "ok": False,
+                "id": draft.id,
+                "draft": draft.draft_text,
+                "error": str(exc),
+                "delivered": False,
+                "needs_owner": result.needs_owner,
+            }
+        draft.status = "sent"
+        audit(session, "approve_action", "WhatsApp: режим auto", "guest_agent", "auto", draft.policy_mode)
+        delivered = True
+    elif draft.status == "auto_sent":
+        # Приветствие и время приезда в Telegram уходят сами. В WhatsApp
+        # при режиме «после разрешения» они ждут ту же кнопку, что и остальные.
+        draft.status = "pending_owner"
+    if not delivered and "Повтор" not in (result.reason or ""):
+        notify_owner(
+            f"WhatsApp · {chat_id.split('@')[0]}\n{text}\n\nЧерновик:\n{draft.draft_text}",
+            [[{"text": "Отправить", "callback_data": f"send:{draft.id}"}]],
+        )
+    return {
+        "ok": True,
+        "id": draft.id,
+        "draft": draft.draft_text,
+        "needs_owner": result.needs_owner,
+        "question_class": result.question_class,
+        "booking_id": draft.booking_id,
+        "status": draft.status,
+        "delivered": delivered,
+    }
+
+
 @app.post("/api/bookings/{booking_id}/guest-link")
-def guest_link_api(booking_id: int, session: Session = Depends(get_session)) -> dict:
+def guest_link_api(
+    booking_id: int,
+    session: Session = Depends(get_session),
+    body: GuestLinkIn | None = None,
+) -> dict:
     booking = session.get(Booking, booking_id)
     if not booking:
         raise HTTPException(404)
+    channel = body.channel if body else "telegram"
     try:
-        url = issue_link(session, booking)
+        url = issue_link(session, booking, channel)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     row = active_link(session, booking.id)

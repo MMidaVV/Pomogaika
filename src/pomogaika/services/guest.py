@@ -83,6 +83,17 @@ def bind_guest(
         booking.guest_chat_id = guest_chat_id
     if business_connection_id:
         booking.business_connection_id = business_connection_id
+    if uid or guest_chat_id:
+        booking.guest_channel = "telegram"
+
+
+def bind_whatsapp(booking: Booking, chat_id: str) -> None:
+    """Чат WhatsApp отдельно от Telegram, чтобы ответ не ушёл в другой мессенджер."""
+    chat = (chat_id or "").strip()
+    if not chat:
+        return
+    booking.guest_whatsapp_chat_id = chat[:200]
+    booking.guest_channel = "whatsapp"
 
 
 def upcoming_for_link(session: Session, property_id: int, *, now: datetime | None = None) -> list[Booking]:

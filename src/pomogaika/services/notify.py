@@ -31,6 +31,16 @@ def notify_chat(chat_id: int | None, text: str, keyboard: list[list[dict[str, st
         log.exception("notify")
 
 
+def deliver_to_guest(booking, text: str) -> None:
+    """Написать гостю в тот канал, где он в последний раз ответил."""
+    if getattr(booking, "guest_channel", "") == "whatsapp" and booking.guest_whatsapp_chat_id:
+        from pomogaika.platforms.whatsapp_local import deliver
+
+        deliver(booking.guest_whatsapp_chat_id, text)
+        return
+    notify_guest(booking.guest_chat_id, text, booking.business_connection_id or "")
+
+
 def notify_guest(chat_id: str, text: str, business_connection_id: str = "") -> None:
     if not chat_id:
         return
