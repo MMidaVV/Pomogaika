@@ -73,7 +73,9 @@ class Booking(Base):
     business_connection_id: Mapped[str] = mapped_column(String(128), default="")
     # Куда писать, если гость пришёл из WhatsApp. Не затирает телеграмный чат.
     guest_whatsapp_chat_id: Mapped[str] = mapped_column(String(200), default="")
-    # Последний канал, в котором гость написал: telegram | whatsapp | пусто.
+    # Куда писать, если гость пришёл из Max. Не затирает другие чаты.
+    guest_max_chat_id: Mapped[str] = mapped_column(String(200), default="")
+    # Последний канал, в котором гость написал: telegram | whatsapp | max | пусто.
     guest_channel: Mapped[str] = mapped_column(String(16), default="")
     guest_phone: Mapped[str] = mapped_column(String(20), default="")
     code_hint: Mapped[str] = mapped_column(String(8), default="")
@@ -234,7 +236,7 @@ class GuestLink(Base):
     """Код в тексте, с которым гость пишет в личку собственницы.
 
     В ссылке нет номера брони: только читаемый код вроде KAVA-7f3a.
-    Один код — один Telegram-аккаунт. После выезда плюс сутки код не действует.
+    Один код — один человек, на Telegram, WhatsApp и Max. После выезда плюс сутки код не действует.
     """
 
     __tablename__ = "guest_links"
@@ -245,7 +247,7 @@ class GuestLink(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     guest_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Кто забрал код: "telegram:123" или "whatsapp:79...@c.us". Один код — один человек.
+    # Кто забрал код: "telegram:123", "whatsapp:79...@c.us" или "max:52999747". Один код — один человек.
     guest_identity: Mapped[str] = mapped_column(String(200), default="")
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 

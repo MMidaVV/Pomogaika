@@ -31,6 +31,8 @@ AFTER_ARRIVAL = timedelta(minutes=40)
 def _can_write(booking: Booking) -> bool:
     if booking.guest_channel == "whatsapp":
         return bool(booking.guest_whatsapp_chat_id)
+    if booking.guest_channel == "max":
+        return bool(booking.guest_max_chat_id)
     return bool(booking.guest_chat_id)
 
 

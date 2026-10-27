@@ -96,6 +96,15 @@ def bind_whatsapp(booking: Booking, chat_id: str) -> None:
     booking.guest_channel = "whatsapp"
 
 
+def bind_max(booking: Booking, chat_id: str) -> None:
+    """Чат Max отдельно от Telegram и WhatsApp."""
+    chat = (chat_id or "").strip()
+    if not chat:
+        return
+    booking.guest_max_chat_id = chat[:200]
+    booking.guest_channel = "max"
+
+
 def upcoming_for_link(session: Session, property_id: int, *, now: datetime | None = None) -> list[Booking]:
     now = now or datetime.now()
     rows = (

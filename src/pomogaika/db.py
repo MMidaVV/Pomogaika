@@ -47,6 +47,7 @@ def migrate_sqlite() -> None:
     add("bookings", "guest_chat_id", "VARCHAR(64) DEFAULT ''")
     add("bookings", "business_connection_id", "VARCHAR(128) DEFAULT ''")
     add("bookings", "guest_whatsapp_chat_id", "VARCHAR(200) DEFAULT ''")
+    add("bookings", "guest_max_chat_id", "VARCHAR(200) DEFAULT ''")
     add("bookings", "guest_channel", "VARCHAR(16) DEFAULT ''")
     add("guest_links", "guest_identity", "VARCHAR(200) DEFAULT ''")
     add("bookings", "guest_phone", "VARCHAR(20) DEFAULT ''")

@@ -2281,3 +2281,108 @@ def test_avito_draft_stays_until_send(_prop, _db, monkeypatch):
     assert later.id == draft.id
     assert later.guest_text == "А вечером можно?"
     assert later.thread_json.count('"role": "in"') == 2
+
+
+def test_max_draft_waits_and_stays_off_telegram(_prop, _db, monkeypatch):
+    from pomogaika.services.drafts import create_guest_draft
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("чат Max не привязывается к Telegram или WhatsApp")
+
+    monkeypatch.setattr("pomogaika.services.drafts.bind_guest", boom)
+    monkeypatch.setattr("pomogaika.services.drafts.bind_whatsapp", boom)
+    draft, _result = create_guest_draft(
+        _db, "Где оставить машину?",
+        guest_chat_id="4242", guest_user_id="Анна",
+        channel="max", external_chat_id="4242",
+    )
+    assert draft.channel == "max"
+    assert draft.external_chat_id == "4242"
+    assert draft.guest_user_id == "Анна"
+    assert draft.booking_id is None
+    again, repeat = create_guest_draft(
+        _db, "Где оставить машину?",
+        guest_chat_id="4242", guest_user_id="Анна",
+        channel="max", external_chat_id="4242",
+    )
+    assert again.id == draft.id
+    assert "Повтор" in repeat.reason
+
+
+def test_max_link_uses_same_code(_prop, _db, monkeypatch):
+    from pomogaika.config import settings
+    from pomogaika.models import GuestLink
+    from pomogaika.services.guest_links import issue_link
+    from pomogaika.web.app import GuestLinkIn, guest_link_api
+
+    monkeypatch.setattr(settings, "telegram_owner_username", "galina")
+    monkeypatch.setattr(settings, "max_owner_link", "https://max.ru/u/abcDEF_123?extra=1")
+    start = datetime.now() + timedelta(days=10)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-max", guest_name="Евгения",
+        check_in=start, check_out=start + timedelta(days=3),
+    )
+    _guest_code(_db, booking, monkeypatch)
+    telegram = guest_link_api(booking.id, _db)
+    max_link = guest_link_api(booking.id, _db, GuestLinkIn(channel="max"))
+    assert telegram["code"] == max_link["code"]
+    assert _db.query(GuestLink).count() == 1
+    assert max_link["url"] == "https://max.ru/u/abcDEF_123"
+    assert f"Здравствуйте! Бронь {max_link['code']}" in max_link["message"]
+    monkeypatch.setattr(settings, "max_owner_link", "https://max.ru/:share?text=hi")
+    with pytest.raises(ValueError, match="профил"):
+        issue_link(_db, booking, "max")
+
+
+def test_max_code_is_one_person(_prop, _db, monkeypatch):
+    from pomogaika.services.drafts import create_guest_draft
+    from pomogaika.services.guest_links import resolve_code
+
+    start = datetime.now() + timedelta(days=10)
+    booking = _booking(
+        _db, property_id=_prop.id, external_id="gl-max-2",
+        check_in=start, check_out=start + timedelta(days=3),
+    )
+    row = _guest_code(_db, booking, monkeypatch)
+    text = f"Здравствуйте! Бронь {row.id}"
+    assert resolve_code(_db, text, "52999747", "max").id == booking.id
+    assert row.guest_identity == "max:52999747"
+    assert resolve_code(_db, text, "111", "max") is None
+    assert resolve_code(_db, text, 501) is None
+
+    draft, result = create_guest_draft(
+        _db, text,
+        guest_chat_id="52999747", guest_user_id="Мария",
+        channel="max", external_chat_id="52999747",
+    )
+    assert result.bound_by_code is True
+    assert draft.booking_id == booking.id
+    assert draft.guest_user_id == "Мария"
+    assert booking.guest_max_chat_id == "52999747"
+    assert booking.guest_channel == "max"
+    assert booking.guest_telegram_user_id is None
+    assert booking.guest_chat_id == ""
+    assert booking.guest_whatsapp_chat_id == ""
+
+
+def test_max_approve_holds_and_auto_sends_once(_prop, _db, monkeypatch):
+    from pomogaika.web.app import MaxMessageIn, max_message
+
+    sent = []
+    monkeypatch.setattr("pomogaika.web.app.deliver_max", lambda chat, text: sent.append((chat, text)) or "")
+    monkeypatch.setattr("pomogaika.web.app.notify_owner", lambda *_args, **_kwargs: None)
+
+    held = max_message(MaxMessageIn(chat_id="77", text="Во сколько заезд?", mode="approve", peer="Илья"), _db)
+    assert held["delivered"] is False
+    assert held["status"] == "pending_owner"
+    assert sent == []
+
+    first = max_message(MaxMessageIn(chat_id="77", text="А парковка есть?", mode="auto", peer="Илья"), _db)
+    assert first["delivered"] is True
+    assert first["status"] == "sent"
+    assert sent == [("77", first["draft"])]
+
+    second = max_message(MaxMessageIn(chat_id="77", text="А парковка есть?", mode="auto", peer="Илья"), _db)
+    assert second["id"] == first["id"]
+    assert second["delivered"] is False
+    assert sent == [("77", first["draft"])]

@@ -19,11 +19,12 @@ from pomogaika.domain.dates import parse_close_command
 from pomogaika.models import AuditLog, Block, Booking, BookingConflict, Event, Listing, MessageDraft, Owner, Property, StayOutcome, Task
 from pomogaika.platforms.avito_local import deliver as deliver_avito
 from pomogaika.platforms.avito_local import read_thread as read_avito_thread
+from pomogaika.platforms.max_local import deliver as deliver_max
 from pomogaika.platforms.whatsapp_local import deliver as deliver_whatsapp
 from pomogaika.platforms.email_parser import parse_platform_email
 from pomogaika.platforms.ical import fetch_ics
 from pomogaika.services.llm import enabled as llm_enabled
-from pomogaika.services.guest_links import GUEST_PITCH, active_link, issue_link, revoke
+from pomogaika.services.guest_links import GUEST_PITCH, active_link, issue_link, prefill, revoke
 from pomogaika.services.bookings import (
     blocks_in_range,
     close_dates,
@@ -131,7 +132,7 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 async def telegram_auth(request: Request, call_next):
     """Ручки открыты только мини-приложению Telegram: с подписанным initData от своего человека."""
     host = request.client.host if request.client else ""
-    if request.url.path == "/api/whatsapp/message" and host in {"127.0.0.1", "::1"}:
+    if request.url.path in {"/api/whatsapp/message", "/api/max/message"} and host in {"127.0.0.1", "::1"}:
         return await call_next(request)
     if request.url.path.startswith("/api/") and auth.enabled():
         who = auth.check(
@@ -499,6 +500,15 @@ def draft_action(draft_id: int, body: DraftAction, session: Session = Depends(ge
             deliver_whatsapp(draft.external_chat_id or draft.guest_chat_id, outgoing)
         except RuntimeError as exc:
             raise HTTPException(502, str(exc)) from exc
+    if draft.channel == "max" and body.action in ("send", "edit"):
+        outgoing = (body.text or "").strip() if body.action == "edit" else (draft.draft_text or "").strip()
+        if not outgoing:
+            raise HTTPException(400, "пустой ответ")
+        try:
+            deliver_max(draft.external_chat_id or draft.guest_chat_id, outgoing)
+        except RuntimeError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        delivered = "max"
     if draft.channel == "avito" and body.action in ("send", "edit"):
         outgoing = (body.text or "").strip() if body.action == "edit" else (draft.draft_text or "").strip()
         if not outgoing:
@@ -718,6 +728,11 @@ def issue_code_api(booking_id: int, body: CodeIn, session: Session = Depends(get
             deliver_to_guest(booking, payload)
         except RuntimeError as exc:
             return {"ok": True, "hint": booking.code_hint, "note": f"Код записан, в WhatsApp не ушло: {exc}"}
+    elif booking.guest_channel == "max" and booking.guest_max_chat_id:
+        try:
+            deliver_to_guest(booking, payload)
+        except RuntimeError as exc:
+            return {"ok": True, "hint": booking.code_hint, "note": f"Код записан, в Max не ушло: {exc}"}
     elif booking.guest_chat_id:
         notify_guest(booking.guest_chat_id, payload, booking.business_connection_id)
     return {
@@ -810,6 +825,74 @@ def whatsapp_message(body: WhatsAppMessageIn, session: Session = Depends(get_ses
     }
 
 
+class MaxMessageIn(BaseModel):
+    chat_id: str
+    text: str
+    message_id: str = ""
+    mode: str = "approve"
+    peer: str = ""
+
+
+@app.post("/api/max/message")
+def max_message(body: MaxMessageIn, session: Session = Depends(get_session)) -> dict:
+    """Входящее из локального Max. Черновик тот же, что у Telegram и WhatsApp."""
+    chat_id = (body.chat_id or "").strip()
+    text = (body.text or "").strip()
+    if not chat_id or not text:
+        raise HTTPException(400, "нужны chat_id и text")
+    draft, result = create_guest_draft(
+        session,
+        text,
+        guest_chat_id=chat_id[:64],
+        guest_user_id=(body.peer or chat_id)[:64],
+        channel="max",
+        external_chat_id=chat_id,
+    )
+    repeat = "Повтор" in (result.reason or "")
+    delivered = False
+    mode = (body.mode or "approve").strip().lower()
+    who = (body.peer or chat_id).strip()
+    if mode == "auto" and not repeat:
+        try:
+            deliver_max(draft.external_chat_id or chat_id, draft.draft_text)
+        except RuntimeError as exc:
+            draft.status = "pending_owner"
+            notify_owner(
+                f"Max · {who}\n{text}\n\nЧерновик не ушёл: {exc}\n\n{draft.draft_text}",
+                [[{"text": "Отправить", "callback_data": f"send:{draft.id}"}]],
+            )
+            return {
+                "ok": False,
+                "id": draft.id,
+                "draft": draft.draft_text,
+                "error": str(exc),
+                "delivered": False,
+                "needs_owner": result.needs_owner,
+                "question_class": result.question_class,
+                "booking_id": draft.booking_id,
+            }
+        draft.status = "sent"
+        audit(session, "approve_action", "Max: режим auto", "guest_agent", "auto", draft.policy_mode)
+        delivered = True
+    elif draft.status == "auto_sent":
+        draft.status = "pending_owner"
+    if not delivered and not repeat:
+        notify_owner(
+            f"Max · {who}\n{text}\n\nЧерновик:\n{draft.draft_text}",
+            [[{"text": "Отправить", "callback_data": f"send:{draft.id}"}]],
+        )
+    return {
+        "ok": True,
+        "id": draft.id,
+        "draft": draft.draft_text,
+        "needs_owner": result.needs_owner,
+        "question_class": result.question_class,
+        "booking_id": draft.booking_id,
+        "status": draft.status,
+        "delivered": delivered,
+    }
+
+
 @app.post("/api/bookings/{booking_id}/guest-link")
 def guest_link_api(
     booking_id: int,
@@ -825,11 +908,14 @@ def guest_link_api(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     row = active_link(session, booking.id)
+    message = GUEST_PITCH
+    if (channel or "").strip().lower() == "max" and row:
+        message = f"{GUEST_PITCH}\n\n{prefill(row.id)}"
     return {
         "url": url,
         "code": row.id if row else "",
         "expires_at": row.expires_at.isoformat() if row else "",
-        "message": GUEST_PITCH,
+        "message": message,
     }
 
 

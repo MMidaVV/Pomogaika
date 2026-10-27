@@ -24,3 +24,8 @@ tools/whatsapp-web/node_modules/
 tools/whatsapp-web/session/
 tools/whatsapp-web/logs/
 tools/whatsapp-web/.wwebjs_cache/
+
+# Эксперимент Max: токен веб-сессии и тексты переписок
+tools/max-web/node_modules/
+tools/max-web/session/
+tools/max-web/logs/

@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     whatsapp_owner_phone: str = ""
     # Локальный процесс whatsapp-web.js. Слушает только эту машину.
     whatsapp_base_url: str = "http://127.0.0.1:8792"
+    # Ссылка на личный профиль Max: https://max.ru/u/… Гость открывает чат с вами.
+    # Текст «Здравствуйте! Бронь …» в адрес не вшивается: у Max нет такого параметра.
+    max_owner_link: str = ""
+    # Локальный процесс Node-Max. Слушает только эту машину.
+    max_base_url: str = "http://127.0.0.1:8793"
     # Номера поддержки площадок и свой номер: в гостевой телефон их не пишем.
     guest_phone_blocklist: str = ""
     telegram_cleaner_user_id: int | None = None

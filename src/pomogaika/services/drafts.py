@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pomogaika.db import SessionLocal
 from pomogaika.models import MessageDraft, Property
 from pomogaika.services.copilot import CopilotResult, booking_label, classify_and_draft
-from pomogaika.services.guest import bind_guest, bind_whatsapp, match_booking
+from pomogaika.services.guest import bind_guest, bind_max, bind_whatsapp, match_booking
 from pomogaika.services.nudges import capture_eta
 from pomogaika.services.guest_links import is_greeting_only, resolve_code, welcome_text
 from pomogaika.services.seed import audit, emit
@@ -61,20 +61,30 @@ def create_guest_draft(
     external_chat_id: str = "",
 ) -> tuple[MessageDraft, CopilotResult]:
     prop = session.query(Property).one()
-    link_channel = "whatsapp" if channel == "whatsapp" else "telegram"
-    linked = resolve_code(session, text, guest_user_id, link_channel)
+    if channel == "whatsapp":
+        link_channel = "whatsapp"
+        link_user = guest_user_id
+    elif channel == "max":
+        link_channel = "max"
+        link_user = external_chat_id or guest_chat_id
+    else:
+        link_channel = "telegram"
+        link_user = guest_user_id
+    linked = resolve_code(session, text, link_user, link_channel)
     if linked is not None:
         booking_id = linked.id
     booking = match_booking(
         session,
         prop.id,
-        telegram_user_id=guest_user_id,
+        telegram_user_id="" if channel == "max" else guest_user_id,
         text=text,
         booking_id=booking_id,
     )
     if booking:
         if channel == "whatsapp":
             bind_whatsapp(booking, external_chat_id or guest_chat_id)
+        elif channel == "max":
+            bind_max(booking, external_chat_id or guest_chat_id)
         else:
             bind_guest(booking, guest_user_id, guest_chat_id, business_connection_id)
     if booking is not None and booking.awaiting:

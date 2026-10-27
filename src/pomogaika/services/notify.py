@@ -38,6 +38,11 @@ def deliver_to_guest(booking, text: str) -> None:
 
         deliver(booking.guest_whatsapp_chat_id, text)
         return
+    if getattr(booking, "guest_channel", "") == "max" and booking.guest_max_chat_id:
+        from pomogaika.platforms.max_local import deliver
+
+        deliver(booking.guest_max_chat_id, text)
+        return
     notify_guest(booking.guest_chat_id, text, booking.business_connection_id or "")
 
 

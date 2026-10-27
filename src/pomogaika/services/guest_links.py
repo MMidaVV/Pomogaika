@@ -25,15 +25,18 @@ GUEST_PITCH = (
 def issue_link(session: Session, booking: Booking, channel: str = "telegram") -> str:
     """Действующая ссылка на эту бронь. Повторный вызов не создаёт новый код.
 
-    Код один на оба канала. Меняется только адрес: личка Telegram или WhatsApp.
+    Код один на все каналы. Меняется только адрес: Telegram, WhatsApp или Max.
     """
     kind = _channel(channel)
     username = _username()
     phone = _whatsapp_phone()
+    profile = _max_profile()
     if kind == "telegram" and not username:
         raise ValueError("В настройках нет username собственницы в Telegram")
     if kind == "whatsapp" and not phone:
         raise ValueError("В настройках нет номера WhatsApp")
+    if kind == "max" and not profile:
+        raise ValueError("В настройках нет ссылки на профиль Max")
     row = active_link(session, booking.id)
     if row is None:
         # срок всегда «выезд плюс сутки», поэтому повтор после этой даты
@@ -57,6 +60,8 @@ def issue_link(session: Session, booking: Booking, channel: str = "telegram") ->
         session.flush()
     if kind == "whatsapp":
         return _wa_url(phone, row.id)
+    if kind == "max":
+        return profile
     return _url(username, row.id)
 
 
@@ -111,8 +116,8 @@ def active_link(session: Session, booking_id: int, *, now: datetime | None = Non
 
 def _channel(channel: str) -> str:
     kind = (channel or "telegram").strip().lower()
-    if kind not in {"telegram", "whatsapp"}:
-        raise ValueError("канал: telegram или whatsapp")
+    if kind not in {"telegram", "whatsapp", "max"}:
+        raise ValueError("канал: telegram, whatsapp или max")
     return kind
 
 
@@ -129,8 +134,24 @@ def _whatsapp_phone() -> str:
     return digits if len(digits) >= 11 else ""
 
 
+def _max_profile() -> str:
+    """Личный профиль. Канал, группа и экран «поделиться» сюда не подходят."""
+    raw = (settings.max_owner_link or "").strip()
+    if not raw.startswith("https://max.ru/"):
+        return ""
+    base = raw.split("?", 1)[0].rstrip("/")
+    path = base[len("https://max.ru/"):]
+    if not path or path.startswith(":") or path.startswith("join/") or path.startswith("joincall/"):
+        return ""
+    return base
+
+
+def prefill(code: str) -> str:
+    return _PREFILL.format(code=code)
+
+
 def _identity(channel: str, user) -> str:
-    kind = "whatsapp" if (channel or "").strip().lower() == "whatsapp" else "telegram"
+    kind = (channel or "telegram").strip().lower()
     if kind == "whatsapp":
         raw = str(user or "").strip()
         if "@" not in raw:
@@ -141,6 +162,9 @@ def _identity(channel: str, user) -> str:
                 digits = "7" + digits
             raw = f"{digits}@c.us" if digits else ""
         return f"whatsapp:{raw}" if raw else ""
+    if kind == "max":
+        raw = str(user or "").strip()
+        return f"max:{raw}" if raw else ""
     uid = _uid(user)
     return f"telegram:{uid}" if uid else ""
 

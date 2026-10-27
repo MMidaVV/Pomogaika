@@ -228,6 +228,14 @@ async def _send_to_guest(bot: Bot, draft: MessageDraft, text: str) -> None:
             raise RuntimeError("нет чата WhatsApp")
         await asyncio.to_thread(deliver_whatsapp, chat, text)
         return
+    if draft.channel == "max":
+        from pomogaika.platforms.max_local import deliver as deliver_max
+
+        chat = draft.external_chat_id or draft.guest_chat_id
+        if not chat:
+            raise RuntimeError("нет чата Max")
+        await asyncio.to_thread(deliver_max, chat, text)
+        return
     if not draft.guest_chat_id:
         raise RuntimeError("нет чата гостя")
     kwargs: dict = {"chat_id": int(draft.guest_chat_id), "text": text}
@@ -873,6 +881,10 @@ async def cb_bind(query: CallbackQuery) -> None:
             from pomogaika.services.guest import bind_whatsapp
 
             bind_whatsapp(booking, draft.external_chat_id or draft.guest_chat_id)
+        elif draft.channel == "max":
+            from pomogaika.services.guest import bind_max
+
+            bind_max(booking, draft.external_chat_id or draft.guest_chat_id)
         else:
             bind_guest(booking, draft.guest_user_id, draft.guest_chat_id, draft.business_connection_id)
         result = classify_and_draft(draft.guest_text, booking)
@@ -955,7 +967,7 @@ async def _owner_send_code(message: Message, booking_id: int, text: str) -> None
             await message.answer(payload)
             return
         chat = booking.guest_chat_id
-        if not chat and booking.guest_channel != "whatsapp":
+        if not chat and booking.guest_channel not in {"whatsapp", "max"}:
             draft = (
                 session.query(MessageDraft)
                 .filter(MessageDraft.booking_id == booking.id, MessageDraft.guest_chat_id != "")
@@ -976,6 +988,15 @@ async def _owner_send_code(message: Message, booking_id: int, text: str) -> None
                 await message.answer(f"Код записан, в WhatsApp не ушло: {exc}")
                 return
             await message.answer(f"Отправила в WhatsApp. В журнале только хвост **{booking.code_hint}.")
+        elif booking.guest_channel == "max" and booking.guest_max_chat_id:
+            from pomogaika.services.notify import deliver_to_guest
+
+            try:
+                deliver_to_guest(booking, payload)
+            except RuntimeError as exc:
+                await message.answer(f"Код записан, в Max не ушло: {exc}")
+                return
+            await message.answer(f"Отправила в Max. В журнале только хвост **{booking.code_hint}.")
         elif chat:
             notify_guest(chat, payload, booking.business_connection_id)
             await message.answer(f"Отправила гостю. В журнале только хвост **{booking.code_hint}.")
